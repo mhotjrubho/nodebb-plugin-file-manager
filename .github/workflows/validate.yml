@@ -1,0 +1,29 @@
+name: Validate plugin
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install plugin dependencies
+        run: npm install --ignore-scripts
+      - name: Check JavaScript syntax
+        run: |
+          node --check library.js
+          node --check lib/file-manager.js
+          node --check lib/file-manager-extra.js
+          node --check public/lib/admin.js
+          node --check public/lib/acp.js
+      - name: Validate JSON manifests
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('plugin.json', 'utf8'))"
