@@ -18,9 +18,12 @@
     }
   ],
   "modules": {
-    "../admin/plugins/file-manager.js": "./public/lib/admin.js"
+    "admin/plugins/file-manager": "./public/lib/admin.js"
   },
-  "scss": [
+  "acpScripts": [
+    "public/lib/acp.js"
+  ],
+  "acpScss": [
     "public/scss/admin.scss"
   ],
   "templates": "templates"
