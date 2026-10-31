@@ -1,0 +1,27 @@
+{
+  "id": "nodebb-plugin-file-manager",
+  "name": "NodeBB File Manager",
+  "description": "Secure file manager for NodeBB administrators",
+  "library": "./library.js",
+  "hooks": [
+    {
+      "hook": "static:app.load",
+      "method": "init"
+    },
+    {
+      "hook": "static:api.routes",
+      "method": "addRoutes"
+    },
+    {
+      "hook": "filter:admin.header.build",
+      "method": "addAdminNavigation"
+    }
+  ],
+  "modules": {
+    "../admin/plugins/file-manager.js": "./public/lib/admin.js"
+  },
+  "scss": [
+    "public/scss/admin.scss"
+  ],
+  "templates": "templates"
+}

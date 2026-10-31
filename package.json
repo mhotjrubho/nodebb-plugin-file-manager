@@ -1,0 +1,23 @@
+{
+  "name": "nodebb-plugin-file-manager",
+  "version": "0.1.0",
+  "description": "Secure file manager for NodeBB administrators",
+  "main": "library.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mhotjrubho/nodebb-plugin-file-manager.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "nbbpm": {
+    "compatibility": "^4.16.0"
+  },
+  "keywords": [
+    "nodebb",
+    "plugin",
+    "file-manager",
+    "admin"
+  ]
+}
