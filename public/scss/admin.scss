@@ -211,3 +211,5 @@
         min-height: 350px;
     }
 }
+
+.file-manager-search{display:flex;gap:8px;margin:0 0 14px;max-width:760px}.file-manager-search input{flex:1;min-width:180px}.fm-file-row .fm-file-name{cursor:default}.fm-file-row .fm-file-name.is-directory{cursor:pointer}.fm-actions{align-items:center}
