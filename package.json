@@ -1,6 +1,6 @@
 {
   "name": "nodebb-plugin-file-manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Secure file manager for NodeBB administrators",
   "main": "library.js",
   "license": "MIT",
