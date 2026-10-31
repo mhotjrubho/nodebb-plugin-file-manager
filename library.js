@@ -33,24 +33,24 @@ plugin.addRoutes=function({router,middleware,helpers}){
     const get=(route,handler)=>routeHelpers.setupApiRoute(router,'get',route,adminOnly,endpoint(handler));
     const post=(route,handler)=>routeHelpers.setupApiRoute(router,'post',route,adminOnly,endpoint(handler));
 
-    get('/file-manager/list',req=>FileManager.list(req.query.path||''));
-    get('/file-manager/read',req=>FileManager.read(req.query.path));
-    get('/file-manager/search',req=>Extra.search(req.query.q,req.query.path||''));
-    get('/file-manager/backups',()=>Extra.backups());
+    get('/api/v3/plugins/file-manager/list',req=>FileManager.list(req.query.path||''));
+    get('/api/v3/plugins/file-manager/read',req=>FileManager.read(req.query.path));
+    get('/api/v3/plugins/file-manager/search',req=>Extra.search(req.query.q,req.query.path||''));
+    get('/api/v3/plugins/file-manager/backups',()=>Extra.backups());
 
-    post('/file-manager/write',req=>FileManager.write(req.body.path,req.body.content));
-    post('/file-manager/mkdir',req=>FileManager.mkdir(req.body.path));
-    post('/file-manager/rename',req=>FileManager.rename(req.body.path,req.body.newName));
-    post('/file-manager/delete',req=>FileManager.remove(req.body.path));
-    post('/file-manager/copy',req=>Extra.copyMove(req.body.path,req.body.destination,false));
-    post('/file-manager/move',req=>Extra.copyMove(req.body.path,req.body.destination,true));
-    post('/file-manager/upload',req=>{
+    post('/api/v3/plugins/file-manager/write',req=>FileManager.write(req.body.path,req.body.content));
+    post('/api/v3/plugins/file-manager/mkdir',req=>FileManager.mkdir(req.body.path));
+    post('/api/v3/plugins/file-manager/rename',req=>FileManager.rename(req.body.path,req.body.newName));
+    post('/api/v3/plugins/file-manager/delete',req=>FileManager.remove(req.body.path));
+    post('/api/v3/plugins/file-manager/copy',req=>Extra.copyMove(req.body.path,req.body.destination,false));
+    post('/api/v3/plugins/file-manager/move',req=>Extra.copyMove(req.body.path,req.body.destination,true));
+    post('/api/v3/plugins/file-manager/upload',req=>{
         let paths=[];
         try{paths=JSON.parse(req.body.relativePaths||'[]');}catch(e){throw new Error('רשימת שמות הקבצים אינה תקינה');}
         return Extra.upload(req.files,paths,req.body.path||'');
     });
-    post('/file-manager/extract',req=>Extra.extractZip(req.body.path,req.body.destination||''));
-    post('/file-manager/restore',req=>Extra.restore(req.body.id));
+    post('/api/v3/plugins/file-manager/extract',req=>Extra.extractZip(req.body.path,req.body.destination||''));
+    post('/api/v3/plugins/file-manager/restore',req=>Extra.restore(req.body.id));
 };
 
 plugin.addAdminNavigation=function(header){
