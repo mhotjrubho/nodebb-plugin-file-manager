@@ -1,5 +1,6 @@
 'use strict';
 const routeHelpers=require.main.require('./src/routes/helpers');
+const controllerHelpers=require.main.require('./src/controllers/helpers');
 const user=require.main.require('./src/user');
 const FileManager=require('./lib/file-manager');
 const Extra=require('./lib/file-manager-extra');
@@ -17,9 +18,10 @@ plugin.init=async function({router,middleware}){
         }],
         (req,res)=>res.render('admin/plugins/file-manager',{title:'מנהל הקבצים'})
     );
+    plugin.addRoutes({router,middleware,helpers:controllerHelpers});
 };
 
-plugin.addRoutes=async function({router,middleware,helpers}){
+plugin.addRoutes=function({router,middleware,helpers}){
     const adminOnly=[middleware.ensureLoggedIn,async(req,res,next)=>{
         if(!await isAdministrator(req))return helpers.formatApiResponse(403,res,new Error('[[error:no-privileges]]'));
         return next();
