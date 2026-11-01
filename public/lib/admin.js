@@ -1,24 +1,44 @@
 'use strict';
 
 define('admin/plugins/file-manager', ['api'], function (api) {
-    const state = { path: '', editing: null, original: '', dialogResolve: null, toastTimer: null };
+    const state = {
+        path: '',
+        role: 'viewer',
+        canEdit: false,
+        canManageAccess: false,
+        editor: null,
+        editorReady: false,
+        editorLoading: null,
+        editing: null,
+        original: '',
+        dirty: false,
+        allowedUsers: [],
+        searchResults: [],
+        dialogResolve: null,
+        passwordResolve: null,
+        confirmResolve: null,
+        toastTimer: null,
+        wrapped: false,
+        fullScreen: false
+    };
 
     const $ = id => document.getElementById(id);
-    const fa = name => {
+
+    function fa(name) {
         const node = document.createElement('i');
         node.className = 'fa ' + name;
         node.setAttribute('aria-hidden', 'true');
         return node;
-    };
+    }
 
-    function request(method, route, data) {
+    function request(method, route, data, headers) {
         return new Promise((resolve, reject) => {
             const callback = (error, response) => {
                 if (error) return reject(error);
                 resolve(response && response.response ? response.response : response);
             };
             if (method === 'get') api.get(route, data || {}, callback);
-            else api.post(route, data || {}, {}, callback);
+            else api.post(route, data || {}, headers || {}, callback);
         });
     }
 
@@ -31,7 +51,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         state.toastTimer = setTimeout(() => { node.hidden = true; }, 5000);
     }
 
-    function button(text, iconName, handler, danger) {
+    function makeButton(text, iconName, handler, danger) {
         const node = document.createElement('button');
         node.type = 'button';
         node.className = 'fm-action-btn' + (danger ? ' is-danger' : '');
@@ -41,12 +61,13 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         return node;
     }
 
-    function ask(title, detail, value, placeholder, confirmText) {
+    function askValue(title, description, value, placeholder, confirmText) {
         if (state.dialogResolve) state.dialogResolve(null);
         return new Promise(resolve => {
             state.dialogResolve = resolve;
             $('fm-dialog-title').textContent = title;
-            $('fm-dialog-description').textContent = detail || '';
+            $('fm-dialog-description').textContent = description || '';
+            $('fm-dialog-input').type = 'text';
             $('fm-dialog-input').value = value || '';
             $('fm-dialog-input').placeholder = placeholder || '';
             $('fm-dialog-confirm').textContent = confirmText || 'אישור';
@@ -56,11 +77,70 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         });
     }
 
-    function finishDialog(value) {
+    function finishValueDialog(value) {
         const resolve = state.dialogResolve;
         state.dialogResolve = null;
         $('fm-dialog').hidden = true;
         if (resolve) resolve(value);
+    }
+
+    function askPassword(description) {
+        if (state.passwordResolve) state.passwordResolve(null);
+        return new Promise(resolve => {
+            state.passwordResolve = resolve;
+            $('fm-password-description').textContent = description || 'להמשך הפעולה, הזן את סיסמת חשבון הפורום שלך.';
+            $('fm-password-input').value = '';
+            $('fm-password-error').hidden = true;
+            $('fm-password-confirm').disabled = false;
+            $('fm-password-dialog').hidden = false;
+            $('fm-password-input').focus();
+        });
+    }
+
+    function finishPasswordDialog(value) {
+        const resolve = state.passwordResolve;
+        state.passwordResolve = null;
+        $('fm-password-dialog').hidden = true;
+        $('fm-password-input').value = '';
+        if (resolve) resolve(value);
+    }
+
+    function askConfirmation(title, description, confirmText) {
+        if (state.confirmResolve) state.confirmResolve(false);
+        return new Promise(resolve => {
+            state.confirmResolve = resolve;
+            $('fm-confirm-title').textContent = title;
+            $('fm-confirm-description').textContent = description;
+            $('fm-confirm-accept').textContent = confirmText || 'אישור';
+            $('fm-confirm-dialog').hidden = false;
+        });
+    }
+
+    function finishConfirmation(value) {
+        const resolve = state.confirmResolve;
+        state.confirmResolve = null;
+        $('fm-confirm-dialog').hidden = true;
+        if (resolve) resolve(Boolean(value));
+    }
+
+    async function securePost(route, data, description) {
+        let password = await askPassword(description);
+        if (password === null) return null;
+        try {
+            return await request('post', route, data || {}, { 'x-password-confirmation': password });
+        } catch (error) {
+            const message = String(error && error.message || '');
+            if (/invalid password|password|סיסמ|אימות/i.test(message)) {
+                $('fm-password-error').textContent = 'NodeBB לא אישר את הסיסמה. בדוק אותה ונסה שוב.';
+                $('fm-password-error').hidden = false;
+                $('fm-password-dialog').hidden = false;
+                $('fm-password-input').value = '';
+                $('fm-password-input').focus();
+            }
+            throw error;
+        } finally {
+            password = '';
+        }
     }
 
     function formatSize(bytes) {
@@ -75,18 +155,200 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString('he-IL');
     }
 
+    function updateRoleUI() {
+        const root = document.querySelector('.file-manager-page');
+        root.classList.toggle('fm-readonly', !state.canEdit);
+
+        const roleText = state.role === 'admin' ? 'מנהל מערכת · גישה מלאה' :
+            state.role === 'editor' ? 'משתמש מורשה · עריכה' : 'משתמש מורשה · צפייה בלבד';
+        $('fm-role-label').textContent = roleText;
+        $('fm-access-open').hidden = !state.canManageAccess;
+
+        [
+            'fm-new-folder',
+            'fm-new-file',
+            'fm-upload-files',
+            'fm-upload-folder'
+        ].forEach(id => { $(id).hidden = !state.canEdit; });
+
+        if (state.editor && typeof state.editor.setOption === 'function') {
+            state.editor.setOption('readOnly', !state.canEdit);
+        }
+        if (!state.canEdit && state.editor) {
+            $('fm-save').disabled = true;
+            $('fm-editor-discard').disabled = true;
+        }
+    }
+
+    async function loadPermissions() {
+        const result = await request('get', '/plugins/file-manager/permissions', {});
+        state.role = result.role || 'viewer';
+        state.canEdit = Boolean(result.canEdit);
+        state.canManageAccess = Boolean(result.canManageAccess);
+        updateRoleUI();
+    }
+
+    function loadStaticUrl(relative) {
+        const prefix = (config.relative_path || '') + '/plugins/nodebb-plugin-file-manager/vendor/';
+        return prefix + relative;
+    }
+
+    function loadCss(relative) {
+        const href = loadStaticUrl(relative);
+        if (document.querySelector('link[data-fm-css="' + href + '"]')) return;
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = href;
+        link.dataset.fmCss = href;
+        document.head.appendChild(link);
+    }
+
+    function loadAmdModule(relative) {
+        const url = loadStaticUrl(relative.replace(/\.js$/, ''));
+        return new Promise((resolve, reject) => {
+            require([url], module => resolve(module), error => reject(error));
+        });
+    }
+
+    async function ensureEditor() {
+        if (state.editorReady) return;
+        if (state.editorLoading) return state.editorLoading;
+
+        state.editorLoading = (async () => {
+            [
+                'lib/codemirror.css',
+                'theme/material-darker.css',
+                'addon/fold/foldgutter.css',
+                'addon/dialog/dialog.css',
+                'addon/display/fullscreen.css'
+            ].forEach(loadCss);
+
+            const core = await loadAmdModule('lib/codemirror.js');
+            const CodeMirror = core && core.default ? core.default : core;
+            if (!CodeMirror || typeof CodeMirror.fromTextArea !== 'function') {
+                throw new Error('ספריית העורך נטענה אך אינה זמינה');
+            }
+            window.CodeMirror = CodeMirror;
+
+            const modules = [
+                'mode/xml/xml.js',
+                'mode/javascript/javascript.js',
+                'mode/css/css.js',
+                'mode/htmlmixed/htmlmixed.js',
+                'mode/clike/clike.js',
+                'mode/php/php.js',
+                'mode/python/python.js',
+                'mode/shell/shell.js',
+                'mode/yaml/yaml.js',
+                'mode/markdown/markdown.js',
+                'mode/sql/sql.js',
+                'addon/edit/closebrackets.js',
+                'addon/edit/matchbrackets.js',
+                'addon/edit/matchtags.js',
+                'addon/selection/active-line.js',
+                'addon/display/fullscreen.js',
+                'addon/fold/foldcode.js',
+                'addon/fold/foldgutter.js',
+                'addon/fold/brace-fold.js',
+                'addon/fold/xml-fold.js',
+                'addon/search/searchcursor.js',
+                'addon/dialog/dialog.js',
+                'addon/search/search.js'
+            ];
+            for (const modulePath of modules) {
+                await loadAmdModule(modulePath);
+            }
+
+            state.editor = CodeMirror.fromTextArea($('fm-editor'), {
+                mode: 'text/plain',
+                theme: 'material-darker',
+                lineNumbers: true,
+                lineWrapping: false,
+                indentUnit: 4,
+                tabSize: 4,
+                indentWithTabs: false,
+                matchBrackets: true,
+                autoCloseBrackets: true,
+                styleActiveLine: true,
+                matchTags: { bothTags: true },
+                foldGutter: true,
+                gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
+                extraKeys: {
+                    'Ctrl-S': () => saveFile(),
+                    'Cmd-S': () => saveFile(),
+                    'Ctrl-F': 'findPersistent',
+                    'Cmd-F': 'findPersistent',
+                    'Ctrl-/': 'toggleComment',
+                    'Cmd-/': 'toggleComment',
+                    'Tab': cm => {
+                        if (cm.somethingSelected()) cm.indentSelection('add');
+                        else cm.replaceSelection(' '.repeat(cm.getOption('indentUnit')), 'end');
+                    }
+                }
+            });
+
+            state.editor.on('change', () => updateEditorStatus());
+            state.editor.on('cursorActivity', () => updateEditorStatus());
+            state.editorReady = true;
+            updateRoleUI();
+        })();
+
+        try {
+            await state.editorLoading;
+        } finally {
+            state.editorLoading = null;
+        }
+    }
+
+    function detectMode(filename) {
+        const extension = String(filename || '').split('.').pop().toLowerCase();
+        const modes = {
+            js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
+            json: { name: 'javascript', json: true },
+            html: 'htmlmixed', htm: 'htmlmixed', tpl: 'htmlmixed',
+            xml: 'application/xml', svg: 'xml',
+            css: 'css', scss: 'css', less: 'css',
+            php: 'application/x-httpd-php',
+            py: 'python',
+            sh: 'shell', bash: 'shell',
+            yml: 'yaml', yaml: 'yaml',
+            md: 'markdown', markdown: 'markdown',
+            sql: 'text/x-sql'
+        };
+        return modes[extension] || 'text/plain';
+    }
+
+    function updateEditorStatus() {
+        if (!state.editor) return;
+        const cursor = state.editor.getCursor();
+        const lines = state.editor.lineCount();
+        $('fm-editor-lines').textContent = lines + ' שורות · שורה ' + (cursor.line + 1) + ', עמודה ' + (cursor.ch + 1);
+        state.dirty = state.editor.getValue() !== state.original;
+        $('fm-editor-dirty').textContent = state.dirty ? 'יש שינויים שטרם נשמרו' : 'אין שינויים שלא נשמרו';
+        $('fm-editor-dirty').classList.toggle('fm-editor-dirty', state.dirty);
+        $('fm-editor-status').textContent = state.dirty ? 'נערך · טרם נשמר' : 'הקובץ מסונכרן';
+        $('fm-save').disabled = !state.canEdit || !state.dirty;
+        $('fm-editor-discard').disabled = !state.dirty;
+    }
+
+    function setEditorMode(filename) {
+        if (!state.editor) return;
+        const mode = detectMode(filename);
+        state.editor.setOption('mode', mode);
+        $('fm-editor-language').textContent = typeof mode === 'string' ? mode : 'JSON / JavaScript';
+    }
+
     async function load(folder) {
         state.path = folder || '';
-        const pathText = '/' + state.path;
-        $('fm-current-path').textContent = pathText;
-        $('fm-breadcrumb').textContent = pathText;
+        $('fm-current-path').textContent = '/' + state.path;
+        $('fm-breadcrumb').textContent = '/' + state.path;
         $('fm-up').disabled = !state.path;
-        $('fm-item-count').textContent = '…';
+
         const list = $('fm-file-list');
         list.replaceChildren();
         const loading = document.createElement('div');
         loading.className = 'fm-empty';
-        loading.append(fa('fa-circle-notch fa-spin'));
+        loading.appendChild(fa('fa-circle-notch fa-spin'));
         const bold = document.createElement('strong');
         bold.textContent = 'טוען קבצים';
         const hint = document.createElement('span');
@@ -96,12 +358,12 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
         try {
             const result = await request('get', '/plugins/file-manager/list', { path: state.path });
-            render(result.entries || []);
+            renderFiles(result.entries || []);
         } catch (error) {
             list.replaceChildren();
             const failed = document.createElement('div');
             failed.className = 'fm-empty';
-            failed.append(fa('fa-exclamation-triangle'));
+            failed.appendChild(fa('fa-exclamation-triangle'));
             const bold = document.createElement('strong');
             bold.textContent = 'טעינת התיקייה נכשלה';
             failed.appendChild(bold);
@@ -111,7 +373,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         }
     }
 
-    function render(entries) {
+    function renderFiles(entries) {
         const list = $('fm-file-list');
         list.replaceChildren();
         $('fm-item-count').textContent = String(entries.length);
@@ -119,7 +381,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         if (!entries.length) {
             const empty = document.createElement('div');
             empty.className = 'fm-empty';
-            empty.append(fa('fa-folder-open'));
+            empty.appendChild(fa('fa-folder-open'));
             const bold = document.createElement('strong');
             bold.textContent = 'התיקייה ריקה';
             const hint = document.createElement('span');
@@ -133,41 +395,40 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             const row = document.createElement('div');
             row.className = 'fm-file-row';
 
-            const fileName = document.createElement('div');
-            fileName.className = 'fm-file-name' + (item.type === 'directory' ? ' is-directory' : '');
+            const name = document.createElement('div');
+            name.className = 'fm-file-name' + (item.type === 'directory' ? ' is-directory' : '');
             const fileIcon = document.createElement('span');
             fileIcon.className = 'fm-file-icon' + (item.type === 'directory' ? ' is-folder' : '');
             fileIcon.appendChild(fa(item.type === 'directory' ? 'fa-folder' : item.type === 'symlink' ? 'fa-link' : 'fa-file-alt'));
             const label = document.createElement('span');
+            label.className = 'fm-file-name-label';
+            label.dir = 'auto';
             label.textContent = item.name;
-            fileName.append(fileIcon, label);
-            if (item.type === 'directory') fileName.addEventListener('click', () => load(item.path));
+            name.append(fileIcon, label);
+            if (item.type === 'directory') name.addEventListener('click', () => load(item.path));
 
             const type = document.createElement('span');
             type.className = 'fm-file-type' + (item.type === 'directory' ? ' is-folder' : '');
-            type.textContent = item.type === 'directory' ? 'תיקייה' : item.type === 'symlink' ? 'קישור' : 'קובץ';
+            type.textContent = item.type === 'directory' ? 'תיקייה' : item.type === 'symlink' ? 'קישור' : item.type === 'other' ? 'אחר' : 'קובץ';
 
             const size = document.createElement('span');
             size.className = 'fm-file-meta';
             size.textContent = formatSize(item.size);
 
-            const modified = document.createElement('span');
-            modified.className = 'fm-file-meta';
-            modified.textContent = formatDate(item.modified);
-
             const actions = document.createElement('div');
             actions.className = 'fm-file-actions';
-            if (item.type === 'file') {
-                actions.appendChild(button('עריכה', 'fa-edit', () => openFile(item.path)));
-                if (/\.zip$/i.test(item.name)) actions.appendChild(button('חילוץ', 'fa-file-archive', () => extract(item.path)));
+            if (state.canEdit && item.type === 'file') {
+                actions.appendChild(makeButton('עריכה', 'fa-edit', () => openFile(item.path)));
+                if (/\.zip$/i.test(item.name)) actions.appendChild(makeButton('חילוץ', 'fa-file-archive', () => extractZip(item.path)));
             }
-            if (item.type === 'file' || item.type === 'directory') {
-                actions.appendChild(button('העתקה', 'fa-copy', () => copyMove(item, false)));
-                actions.appendChild(button('העברה', 'fa-exchange-alt', () => copyMove(item, true)));
-                actions.appendChild(button('שם', 'fa-pen', () => rename(item)));
-                actions.appendChild(button('מחיקה', 'fa-trash-alt', () => remove(item), true));
+            if (state.canEdit && (item.type === 'file' || item.type === 'directory')) {
+                actions.appendChild(makeButton('העתקה', 'fa-copy', () => copyMove(item, false)));
+                actions.appendChild(makeButton('העברה', 'fa-exchange-alt', () => copyMove(item, true)));
+                actions.appendChild(makeButton('שם', 'fa-pen', () => renameItem(item)));
+                actions.appendChild(makeButton('מחיקה', 'fa-trash-alt', () => removeItem(item), true));
             }
-            row.append(fileName, type, size, modified, actions);
+
+            row.append(name, type, size, actions);
             list.appendChild(row);
         });
     }
@@ -177,101 +438,134 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             const result = await request('get', '/plugins/file-manager/read', { path: folder });
             state.editing = result.path;
             state.original = result.content;
+            $('fm-editor-panel').hidden = false;
+            $('fm-workspace-grid').classList.add('has-editor');
             $('fm-editor-title').textContent = folder.split('/').pop();
             $('fm-editor-path').textContent = folder;
-            $('fm-editor').value = result.content;
-            $('fm-editor-status').textContent = formatSize(new Blob([result.content]).size) + ' · UTF-8';
-            $('fm-editor-panel').hidden = false;
-            $('fm-editor-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            await ensureEditor();
+            state.editor.setValue(result.content);
+            state.editor.clearHistory();
+            setEditorMode(folder);
+            state.editor.setOption('readOnly', !state.canEdit);
+            updateEditorStatus();
+            state.editor.refresh();
+            state.editor.focus();
+            if (window.innerWidth <= 900) $('fm-editor-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
         } catch (error) {
-            toast(error.message || 'לא ניתן לפתוח את הקובץ', true);
+            // Keep the plain textarea usable as a fallback if the editor assets fail to load.
+            $('fm-editor-panel').hidden = false;
+            $('fm-workspace-grid').classList.add('has-editor');
+            $('fm-editor').value = result && result.content || '';
+            toast('טעינת עורך הקוד נכשלה: ' + (error.message || 'שגיאה'), true);
         }
     }
 
-    async function save() {
-        if (!state.editing) return;
-        const content = $('fm-editor').value;
+    async function saveFile() {
+        if (!state.editing || !state.canEdit) return;
+        const content = state.editor ? state.editor.getValue() : $('fm-editor').value;
         if (content === state.original) return toast('לא בוצעו שינויים');
         if (new Blob([content]).size > 2 * 1024 * 1024) return toast('הקובץ חורג ממגבלת העריכה של 2MB', true);
-        if (!confirm('לשמור את השינויים? לפני הדריסה ייווצר גיבוי אוטומטי.')) return;
-        $('fm-save').disabled = true;
+
         try {
-            const result = await request('post', '/plugins/file-manager/write', { path: state.editing, content });
+            const result = await securePost('/plugins/file-manager/write', {
+                path: state.editing,
+                content
+            }, 'כדי לשמור שינויים בקובץ, הזן את סיסמת חשבון NodeBB שלך.');
+            if (!result) return;
             state.original = content;
-            $('fm-editor-status').textContent = 'נשמר בהצלחה · ' + new Date().toLocaleTimeString('he-IL');
+            if (state.editor) state.editor.clearHistory();
+            updateEditorStatus();
             toast(result.backup ? 'הקובץ נשמר ונוצר גיבוי: ' + result.backup : 'הקובץ נשמר בהצלחה');
         } catch (error) {
             toast(error.message || 'שמירת הקובץ נכשלה', true);
-        } finally {
-            $('fm-save').disabled = false;
         }
     }
 
     async function createFolder() {
-        const value = await ask('יצירת תיקייה', 'הקלד שם לתיקייה החדשה.', '', 'שם התיקייה', 'יצירת תיקייה');
+        const value = await askValue('יצירת תיקייה', 'הקלד שם לתיקייה החדשה.', '', 'שם התיקייה', 'יצירת תיקייה');
         if (!value || !value.trim()) return;
         try {
-            await request('post', '/plugins/file-manager/mkdir', { path: (state.path ? state.path + '/' : '') + value.trim() });
+            const result = await securePost('/plugins/file-manager/mkdir', {
+                path: (state.path ? state.path + '/' : '') + value.trim()
+            }, 'אימות סיסמה נדרש לפני יצירת תיקייה.');
+            if (!result) return;
             toast('התיקייה נוצרה בהצלחה');
             await load(state.path);
         } catch (error) { toast(error.message || 'יצירת התיקייה נכשלה', true); }
     }
 
     async function createFile() {
-        const value = await ask('יצירת קובץ', 'הקלד שם כולל סיומת, למשל config.json.', '', 'filename.ext', 'יצירת קובץ');
+        const value = await askValue('יצירת קובץ', 'הקלד שם כולל סיומת, למשל config.json.', '', 'filename.ext', 'יצירת קובץ');
         if (!value || !value.trim()) return;
         const folder = (state.path ? state.path + '/' : '') + value.trim();
         try {
-            await request('post', '/plugins/file-manager/write', { path: folder, content: '' });
+            const result = await securePost('/plugins/file-manager/write', { path: folder, content: '' }, 'אימות סיסמה נדרש לפני יצירת קובץ חדש.');
+            if (!result) return;
             toast('הקובץ נוצר בהצלחה');
             await load(state.path);
             await openFile(folder);
         } catch (error) { toast(error.message || 'יצירת הקובץ נכשלה', true); }
     }
 
-    async function rename(item) {
-        const value = await ask('שינוי שם', 'הקלד את השם החדש של הפריט.', item.name, 'שם חדש', 'שמירת השם');
+    async function renameItem(item) {
+        const value = await askValue('שינוי שם', 'הקלד את השם החדש של הפריט.', item.name, 'שם חדש', 'שמירת השם');
         if (!value || !value.trim() || value.trim() === item.name) return;
         try {
-            await request('post', '/plugins/file-manager/rename', { path: item.path, newName: value.trim() });
+            const result = await securePost('/plugins/file-manager/rename', {
+                path: item.path,
+                newName: value.trim()
+            }, 'אימות סיסמה נדרש לפני שינוי שם.');
+            if (!result) return;
             toast('שם הפריט עודכן');
             await load(state.path);
         } catch (error) { toast(error.message || 'שינוי השם נכשל', true); }
     }
 
-    async function remove(item) {
-        if (!confirm('להעביר את "' + item.name + '" לסל המחזור? ניתן לשחזר אותו דרך גיבויים וסל מחזור.')) return;
+    async function removeItem(item) {
+        const approved = await askConfirmation('העברה לסל המחזור', 'להעביר את "' + item.name + '" לסל המחזור? אפשר לשחזר אותו בהמשך.', 'העבר לסל המחזור');
+        if (!approved) return;
         try {
-            const result = await request('post', '/plugins/file-manager/delete', { path: item.path });
-            toast('הפריט הועבר לסל המחזור. מזהה: ' + result.id);
+            const result = await securePost('/plugins/file-manager/delete', { path: item.path }, 'אימות סיסמה נדרש לפני העברת פריט לסל המחזור.');
+            if (!result) return;
+            toast('הפריט הועבר לסל המחזור');
             await load(state.path);
         } catch (error) { toast(error.message || 'העברת הפריט נכשלה', true); }
     }
 
     async function copyMove(item, move) {
-        const suggestion = move ? '' : (state.path ? state.path + '/' : '') + item.name + '-copy';
-        const value = await ask(move ? 'העברת פריט' : 'העתקת פריט', 'הזן נתיב יעד יחסי לתיקיית NodeBB.', suggestion, 'למשל public/uploads/example', move ? 'העברה' : 'העתקה');
+        const suggested = move ? '' : (state.path ? state.path + '/' : '') + item.name + '-copy';
+        const value = await askValue(move ? 'העברת פריט' : 'העתקת פריט', 'הזן נתיב יעד יחסי לתיקיית NodeBB.', suggested, 'למשל public/uploads/example', move ? 'העברה' : 'העתקה');
         if (!value || !value.trim()) return;
         try {
-            await request('post', '/plugins/file-manager/' + (move ? 'move' : 'copy'), { path: item.path, destination: value.trim() });
+            const result = await securePost('/plugins/file-manager/' + (move ? 'move' : 'copy'), {
+                path: item.path,
+                destination: value.trim()
+            }, 'אימות סיסמה נדרש לפני העתקה או העברה.');
+            if (!result) return;
             toast(move ? 'הפריט הועבר' : 'הפריט הועתק');
             await load(state.path);
         } catch (error) { toast(error.message || 'הפעולה נכשלה', true); }
     }
 
-    async function search() {
+    async function searchFiles() {
         const query = $('fm-search-input').value.trim();
         if (query.length < 2) return toast('יש להזין לפחות שני תווים לחיפוש', true);
         try {
             const result = await request('get', '/plugins/file-manager/search', { q: query, path: state.path });
-            render((result.results || []).map(item => ({ ...item, name: item.path })));
+            renderFiles((result.results || []).map(item => ({ ...item, name: item.path })));
             toast(result.truncated ? 'הוצגו תוצאות חלקיות. צמצם את החיפוש.' : 'נמצאו ' + result.results.length + ' תוצאות');
         } catch (error) { toast(error.message || 'החיפוש נכשל', true); }
     }
 
-    async function upload(input) {
+    async function uploadFiles(input) {
         const files = Array.from(input.files || []);
         if (!files.length) return;
+        let password = await askPassword('הזן סיסמה פעם אחת כדי לאשר את כל מנות ההעלאה. הסיסמה לא נשמרת בתוסף.');
+        if (password === null) {
+            input.value = '';
+            return;
+        }
+
         let count = 0;
         try {
             for (let offset = 0; offset < files.length; offset += 20) {
@@ -284,7 +578,9 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 });
                 form.append('relativePaths', JSON.stringify(paths));
                 form.append('path', state.path);
-                const result = await request('post', '/plugins/file-manager/upload', form);
+                const result = await request('post', '/plugins/file-manager/upload', form, {
+                    'x-password-confirmation': password
+                });
                 count += result.count || batch.length;
                 toast('הועלו ' + count + ' מתוך ' + files.length + ' קבצים');
             }
@@ -293,13 +589,21 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         } catch (error) {
             toast('ההעלאה נעצרה לאחר ' + count + ' קבצים: ' + (error.message || 'שגיאה'), true);
             await load(state.path);
-        } finally { input.value = ''; }
+        } finally {
+            password = '';
+            input.value = '';
+        }
     }
 
-    async function extract(folder) {
-        if (!confirm('לחלץ את קובץ ה-ZIP לתיקייה הנוכחית? קבצים קיימים לא יידרסו.')) return;
+    async function extractZip(folder) {
+        const approved = await askConfirmation('חילוץ ארכיון ZIP', 'לחלץ את הארכיון לתיקייה הנוכחית? קבצים קיימים לא יידרסו.', 'חלץ ארכיון');
+        if (!approved) return;
         try {
-            const result = await request('post', '/plugins/file-manager/extract', { path: folder, destination: state.path });
+            const result = await securePost('/plugins/file-manager/extract', {
+                path: folder,
+                destination: state.path
+            }, 'אימות סיסמה נדרש לפני חילוץ ארכיון.');
+            if (!result) return;
             toast('החילוץ הושלם: ' + result.entries + ' פריטים');
             await load(state.path);
         } catch (error) { toast(error.message || 'חילוץ ZIP נכשל', true); }
@@ -307,13 +611,14 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
     async function openBackups() {
         $('fm-backups-panel').hidden = false;
+        $('fm-backups-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
         const list = $('fm-backups-list');
         list.replaceChildren();
         const loading = document.createElement('div');
         loading.className = 'fm-empty';
-        loading.textContent = 'טוען גיבויים וסל מחזור...';
+        loading.textContent = 'טוען גיבויים וסל מחזור…';
         list.appendChild(loading);
-        $('fm-backups-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
         try {
             const result = await request('get', '/plugins/file-manager/backups', {});
             renderBackups(result.backups || []);
@@ -339,6 +644,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             row.className = 'fm-backup-row';
             const name = document.createElement('div');
             name.className = 'fm-backup-name';
+            name.dir = 'auto';
             name.textContent = item.path;
             const kind = document.createElement('span');
             kind.className = 'fm-backup-kind';
@@ -348,37 +654,218 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             created.textContent = formatDate(item.createdAt);
             const actions = document.createElement('div');
             actions.className = 'fm-backup-actions';
-            actions.appendChild(button('שחזור', 'fa-undo', () => restore(item)));
-            if (item.kind === 'trash') actions.appendChild(button('מחיקה לצמיתות', 'fa-trash-alt', () => purge(item), true));
+            if (state.canEdit) {
+                actions.appendChild(makeButton('שחזור', 'fa-undo', () => restoreBackup(item)));
+                if (item.kind === 'trash') actions.appendChild(makeButton('מחיקה לצמיתות', 'fa-trash-alt', () => purgeBackup(item), true));
+            }
             row.append(name, kind, created, actions);
             list.appendChild(row);
         });
     }
 
-    async function restore(item) {
-        if (!confirm('לשחזר את הפריט? אם כבר קיים פריט באותו נתיב, השחזור לא ידרוס אותו.\n\n' + item.path)) return;
+    async function restoreBackup(item) {
+        const approved = await askConfirmation('שחזור פריט', 'לשחזר את הפריט? אם כבר קיים פריט באותו נתיב, השחזור לא ידרוס אותו.\n' + item.path, 'שחזור');
+        if (!approved) return;
         try {
-            await request('post', '/plugins/file-manager/restore', { id: item.id });
+            const result = await securePost('/plugins/file-manager/restore', { id: item.id }, 'אימות סיסמה נדרש לפני שחזור גיבוי.');
+            if (!result) return;
             toast('השחזור הושלם בהצלחה');
             await openBackups();
             await load(state.path);
         } catch (error) { toast(error.message || 'השחזור נכשל', true); }
     }
 
-    async function purge(item) {
-        if (!confirm('למחוק לצמיתות את הפריט ואת כל תוכנו? פעולה זו אינה ניתנת לשחזור.\n\n' + item.path)) return;
+    async function purgeBackup(item) {
+        const approved = await askConfirmation('מחיקה לצמיתות', 'למחוק לצמיתות את הפריט ואת כל תוכנו? לא ניתן לשחזר פעולה זו.\n' + item.path, 'מחיקה לצמיתות');
+        if (!approved) return;
         try {
-            await request('post', '/plugins/file-manager/purge', { id: item.id });
+            const result = await securePost('/plugins/file-manager/purge', { id: item.id }, 'אימות סיסמה נדרש לפני מחיקה לצמיתות.');
+            if (!result) return;
             toast('הפריט נמחק לצמיתות');
             await openBackups();
         } catch (error) { toast(error.message || 'המחיקה לצמיתות נכשלה', true); }
     }
 
+    async function openAccessPanel() {
+        if (!state.canManageAccess) return;
+        $('fm-access-panel').hidden = false;
+        $('fm-access-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        $('fm-user-search-results').replaceChildren();
+        try {
+            const result = await request('get', '/plugins/file-manager/access', {});
+            state.allowedUsers = result.users || [];
+            renderAllowedUsers();
+        } catch (error) { toast(error.message || 'טעינת רשימת ההרשאות נכשלה', true); }
+    }
+
+    async function searchUsers() {
+        const query = $('fm-user-search').value.trim();
+        if (query.length < 2) return toast('יש להזין לפחות שני תווים לחיפוש משתמש', true);
+        const results = $('fm-user-search-results');
+        results.replaceChildren();
+        const loading = document.createElement('div');
+        loading.className = 'fm-empty';
+        loading.textContent = 'מחפש משתמשים בפורום…';
+        results.appendChild(loading);
+        try {
+            const response = await request('get', '/plugins/file-manager/users/search', { q: query });
+            state.searchResults = response.users || [];
+            renderUserSearchResults();
+        } catch (error) {
+            results.replaceChildren();
+            toast(error.message || 'חיפוש המשתמשים נכשל', true);
+        }
+    }
+
+    function renderUserSearchResults() {
+        const results = $('fm-user-search-results');
+        results.replaceChildren();
+        if (!state.searchResults.length) return;
+
+        state.searchResults.forEach(user => {
+            const row = document.createElement('div');
+            row.className = 'fm-user-search-result';
+            const name = document.createElement('div');
+            name.className = 'fm-user-search-name';
+            const avatar = document.createElement('span');
+            avatar.className = 'fm-user-avatar';
+            if (user.picture) {
+                const img = document.createElement('img');
+                img.src = user.picture;
+                img.alt = '';
+                avatar.appendChild(img);
+            } else {
+                avatar.appendChild(fa('fa-user'));
+            }
+            const text = document.createElement('span');
+            text.textContent = user.username;
+            text.dir = 'auto';
+            name.append(avatar, text);
+
+            const add = document.createElement('button');
+            add.type = 'button';
+            add.className = 'fm-btn fm-btn-light';
+            add.textContent = state.allowedUsers.some(item => String(item.uid) === String(user.uid)) ? 'כבר מורשה' : 'הוספת משתמש';
+            add.disabled = state.allowedUsers.some(item => String(item.uid) === String(user.uid));
+            add.addEventListener('click', () => {
+                if (state.allowedUsers.some(item => String(item.uid) === String(user.uid))) return;
+                state.allowedUsers.push({
+                    uid: String(user.uid),
+                    username: user.username,
+                    userslug: user.userslug,
+                    picture: user.picture,
+                    role: 'viewer'
+                });
+                renderAllowedUsers();
+                renderUserSearchResults();
+            });
+            row.append(name, add);
+            results.appendChild(row);
+        });
+    }
+
+    function renderAllowedUsers() {
+        const list = $('fm-allowed-users');
+        list.replaceChildren();
+        $('fm-access-count').textContent = state.allowedUsers.length + ' משתמשים';
+
+        if (!state.allowedUsers.length) {
+            const empty = document.createElement('div');
+            empty.className = 'fm-empty';
+            empty.append(fa('fa-user-lock'));
+            const bold = document.createElement('strong');
+            bold.textContent = 'לא הוגדרו משתמשים מורשים';
+            const hint = document.createElement('span');
+            hint.textContent = 'רק מנהלי NodeBB יכולים להיכנס עד להוספת משתמשים.';
+            empty.append(bold, hint);
+            list.appendChild(empty);
+            return;
+        }
+
+        state.allowedUsers.forEach((item, index) => {
+            const row = document.createElement('div');
+            row.className = 'fm-allowed-user';
+            const name = document.createElement('div');
+            name.className = 'fm-allowed-user-name';
+            name.textContent = item.username || ('משתמש ' + item.uid);
+            const uid = document.createElement('span');
+            uid.className = 'fm-allowed-user-uid';
+            uid.textContent = 'UID ' + item.uid;
+            name.appendChild(uid);
+
+            const select = document.createElement('select');
+            select.setAttribute('aria-label', 'רמת הרשאה עבור ' + (item.username || item.uid));
+            [
+                { value: 'viewer', label: 'צפייה בלבד' },
+                { value: 'editor', label: 'צפייה ועריכה' }
+            ].forEach(optionData => {
+                const option = document.createElement('option');
+                option.value = optionData.value;
+                option.textContent = optionData.label;
+                select.appendChild(option);
+            });
+            select.value = item.role === 'editor' ? 'editor' : 'viewer';
+            select.addEventListener('change', () => { state.allowedUsers[index].role = select.value; });
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'fm-action-btn is-danger';
+            remove.append(fa('fa-user-times'), document.createTextNode(' הסרה'));
+            remove.addEventListener('click', () => {
+                state.allowedUsers.splice(index, 1);
+                renderAllowedUsers();
+                renderUserSearchResults();
+            });
+            row.append(name, select, remove);
+            list.appendChild(row);
+        });
+    }
+
+    async function saveAccessList() {
+        try {
+            const payload = state.allowedUsers.map(item => ({
+                uid: String(item.uid),
+                role: item.role === 'editor' ? 'editor' : 'viewer'
+            }));
+            const result = await securePost('/plugins/file-manager/access', { allowedUsers: payload },
+                'שינוי הרשאות גישה הוא פעולה רגישה. הזן את סיסמת חשבון המנהל שלך.');
+            if (!result) return;
+            toast('רשימת המשתמשים המורשים נשמרה');
+            await openAccessPanel();
+        } catch (error) { toast(error.message || 'שמירת ההרשאות נכשלה', true); }
+    }
+
     function closeEditor() {
-        if ($('fm-editor').value !== state.original && !confirm('יש שינויים שלא נשמרו. לסגור את העורך?')) return;
+        const dirty = state.editor ? state.editor.getValue() !== state.original : $('fm-editor').value !== state.original;
+        if (dirty && !window.confirm('יש שינויים שלא נשמרו. לסגור את העורך?')) return;
         $('fm-editor-panel').hidden = true;
+        $('fm-workspace-grid').classList.remove('has-editor');
         state.editing = null;
         state.original = '';
+        state.dirty = false;
+    }
+
+    function discardEditorChanges() {
+        if (!state.editor || !state.dirty) return;
+        state.editor.setValue(state.original);
+        state.editor.clearHistory();
+        updateEditorStatus();
+    }
+
+    function toggleWrap() {
+        if (!state.editor) return;
+        state.wrapped = !state.wrapped;
+        state.editor.setOption('lineWrapping', state.wrapped);
+        $('fm-editor-wrap').classList.toggle('is-active', state.wrapped);
+    }
+
+    function toggleFullScreen() {
+        if (!state.editor) return;
+        state.fullScreen = !state.fullScreen;
+        state.editor.setOption('fullScreen', state.fullScreen);
+        $('fm-editor-fullscreen').classList.toggle('is-active', state.fullScreen);
+        $('fm-editor-fullscreen').innerHTML = state.fullScreen ? '<i class="fa fa-compress" aria-hidden="true"></i>' : '<i class="fa fa-expand" aria-hidden="true"></i>';
+        state.editor.refresh();
     }
 
     function init() {
@@ -390,27 +877,68 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         $('fm-up').addEventListener('click', () => load(state.path.split('/').slice(0, -1).join('/')));
         $('fm-new-folder').addEventListener('click', createFolder);
         $('fm-new-file').addEventListener('click', createFile);
-        $('fm-save').addEventListener('click', save);
-        $('fm-close-editor').addEventListener('click', closeEditor);
         $('fm-upload-files').addEventListener('click', () => $('fm-files-input').click());
         $('fm-upload-folder').addEventListener('click', () => $('fm-folder-input').click());
-        $('fm-files-input').addEventListener('change', event => upload(event.target));
-        $('fm-folder-input').addEventListener('change', event => upload(event.target));
-        $('fm-search').addEventListener('click', search);
-        $('fm-search-input').addEventListener('keydown', event => { if (event.key === 'Enter') search(); });
+        $('fm-files-input').addEventListener('change', event => uploadFiles(event.target));
+        $('fm-folder-input').addEventListener('change', event => uploadFiles(event.target));
+        $('fm-search').addEventListener('click', searchFiles);
+        $('fm-search-input').addEventListener('keydown', event => { if (event.key === 'Enter') searchFiles(); });
         $('fm-search-clear').addEventListener('click', () => { $('fm-search-input').value = ''; load(state.path); });
         $('fm-backups').addEventListener('click', openBackups);
         $('fm-close-backups').addEventListener('click', () => { $('fm-backups-panel').hidden = true; });
-        $('fm-dialog-cancel').addEventListener('click', () => finishDialog(null));
-        $('fm-dialog-confirm').addEventListener('click', () => finishDialog($('fm-dialog-input').value));
+        $('fm-access-open').addEventListener('click', openAccessPanel);
+        $('fm-access-close').addEventListener('click', () => { $('fm-access-panel').hidden = true; });
+        $('fm-user-search-button').addEventListener('click', searchUsers);
+        $('fm-user-search').addEventListener('keydown', event => { if (event.key === 'Enter') searchUsers(); });
+        $('fm-access-save').addEventListener('click', saveAccessList);
+
+        $('fm-save').addEventListener('click', saveFile);
+        $('fm-editor-close').addEventListener('click', closeEditor);
+        $('fm-editor-discard').addEventListener('click', discardEditorChanges);
+        $('fm-editor-wrap').addEventListener('click', toggleWrap);
+        $('fm-editor-fullscreen').addEventListener('click', toggleFullScreen);
+        $('fm-editor-find').addEventListener('click', () => { if (state.editor) state.editor.execCommand('findPersistent'); });
+
+        $('fm-dialog-cancel').addEventListener('click', () => finishValueDialog(null));
+        $('fm-dialog-confirm').addEventListener('click', () => finishValueDialog($('fm-dialog-input').value));
         $('fm-dialog-input').addEventListener('keydown', event => {
-            if (event.key === 'Enter') finishDialog($('fm-dialog-input').value);
-            if (event.key === 'Escape') finishDialog(null);
+            if (event.key === 'Enter') finishValueDialog($('fm-dialog-input').value);
+            if (event.key === 'Escape') finishValueDialog(null);
         });
         $('fm-dialog').addEventListener('click', event => {
-            if (event.target === $('fm-dialog')) finishDialog(null);
+            if (event.target === $('fm-dialog')) finishValueDialog(null);
         });
-        load('');
+
+        $('fm-password-cancel').addEventListener('click', () => finishPasswordDialog(null));
+        $('fm-password-confirm').addEventListener('click', () => {
+            const password = $('fm-password-input').value;
+            if (!password) {
+                $('fm-password-error').textContent = 'יש להזין סיסמה.';
+                $('fm-password-error').hidden = false;
+                return;
+            }
+            finishPasswordDialog(password);
+        });
+        $('fm-password-input').addEventListener('keydown', event => {
+            if (event.key === 'Enter') $('fm-password-confirm').click();
+            if (event.key === 'Escape') finishPasswordDialog(null);
+        });
+        $('fm-password-dialog').addEventListener('click', event => {
+            if (event.target === $('fm-password-dialog')) finishPasswordDialog(null);
+        });
+
+        $('fm-confirm-cancel').addEventListener('click', () => finishConfirmation(false));
+        $('fm-confirm-accept').addEventListener('click', () => finishConfirmation(true));
+        $('fm-confirm-dialog').addEventListener('click', event => {
+            if (event.target === $('fm-confirm-dialog')) finishConfirmation(false);
+        });
+
+        Promise.resolve()
+            .then(loadPermissions)
+            .then(() => load(''))
+            .catch(error => {
+                toast(error.message || 'טעינת ההרשאות נכשלה', true);
+            });
     }
 
     return { init };
