@@ -680,7 +680,12 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             $('fm-editor').value = fileResult ? fileResult.content : '';
             $('fm-editor').readOnly = !state.canEdit;
             $('fm-editor-language').textContent = 'עורך טקסט בסיסי (גיבוי)';
-            $('fm-editor').addEventListener('input', updateEditorStatus);
+            if ($('fm-editor').dataset.fmFallbackBound !== 'true') {
+                $('fm-editor').addEventListener('input', updateEditorStatus);
+                $('fm-editor').addEventListener('keyup', updateEditorStatus);
+                $('fm-editor').addEventListener('click', updateEditorStatus);
+                $('fm-editor').dataset.fmFallbackBound = 'true';
+            }
             updateEditorStatus();
             toast('טעינת עורך הקוד נכשלה. נפתח עורך גיבוי: ' + (error.message || 'שגיאה'), true);
         }
