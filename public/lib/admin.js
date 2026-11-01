@@ -135,6 +135,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
     }
 
     async function securePost(route, data, description) {
+        let sessionRenewed = false;
         for (let attempt = 0; attempt < 3; attempt += 1) {
             let password = await askPassword(description, 'nodebb');
             if (password === null) return null;
@@ -143,11 +144,13 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
             } catch (error) {
                 const message = String(error && error.message || '');
                 if (/פג תוקף האימות|נדרש מפתח סיסמת מנהל הקבצים|יש להזין שוב את סיסמת מנהל הקבצים/i.test(message)) {
+                    if (sessionRenewed) throw error;
                     const unlocked = await unlockFileManager(
                         'האימות למנהל הקבצים פג. הזן שוב את המפתח האישי שלך.',
                         true
                     );
                     if (!unlocked) return null;
+                    sessionRenewed = true;
                     attempt -= 1;
                     continue;
                 }
