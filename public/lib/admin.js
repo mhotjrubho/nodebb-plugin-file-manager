@@ -20,7 +20,12 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         confirmResolve: null,
         toastTimer: null,
         wrapped: false,
-        fullScreen: false
+        fullScreen: false,
+        selectedItem: null,
+        viewMode: 'list',
+        fmPasswordConfigured: false,
+        uploadController: null,
+        uploadActive: false
     };
 
     const $ = id => document.getElementById(id);
@@ -58,7 +63,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         node.className = 'fm-action-btn' + (danger ? ' is-danger' : '');
         if (iconName) node.appendChild(fa(iconName));
         node.appendChild(document.createTextNode(text));
-        node.addEventListener('click', handler);
+        node.addEventListener('click', event => { event.stopPropagation(); handler(event); });
         return node;
     }
 
@@ -142,6 +147,86 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         return null;
     }
 
+    async function secureFilePost(route, data, description) {
+        if (!state.fmPasswordConfigured) {
+            toast('לפני שינוי קבצים יש להגדיר סיסמת מנהל קבצים אישית.', true);
+            openVaultDialog();
+            return null;
+        }
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            let password = await askPassword(description || 'הזן את סיסמת מנהל הקבצים האישית שלך.');
+            if (password === null) return null;
+            try {
+                return await request('post', route, data || {}, { 'x-file-manager-password': password });
+            } catch (error) {
+                const message = String(error && error.message || '');
+                const rejected = /file manager password|password|סיסמ|מפתח מנהל הקבצים/i.test(message);
+                if (!rejected || attempt === 2) throw error;
+                toast('סיסמת מנהל הקבצים לא אושרה. נסה שוב.', true);
+            } finally {
+                password = '';
+            }
+        }
+        return null;
+    }
+
+    async function loadSecurityStatus() {
+        const result = await request('get', '/plugins/file-manager/credentials/status', {});
+        state.fmPasswordConfigured = Boolean(result.configured);
+        $('fm-vault-status').textContent = state.fmPasswordConfigured ? 'מפתח אישי מוגדר' : 'נדרש להגדיר מפתח אישי';
+        $('fm-vault-status').classList.toggle('is-warning', !state.fmPasswordConfigured);
+        $('fm-vault-open').textContent = state.fmPasswordConfigured ? 'שינוי סיסמה' : 'הגדרת סיסמה';
+    }
+
+    function openVaultDialog() {
+        $('fm-vault-password').value = '';
+        $('fm-vault-confirm').value = '';
+        $('fm-vault-error').hidden = true;
+        $('fm-vault-dialog').hidden = false;
+        $('fm-vault-password').focus();
+    }
+
+    async function saveVaultPassword() {
+        const password = $('fm-vault-password').value;
+        const confirmation = $('fm-vault-confirm').value;
+        if ([...password].length < 12) {
+            $('fm-vault-error').textContent = 'יש לבחור סיסמה ארוכה של 12 תווים לפחות. עדיף משפט סיסמה ייחודי.';
+            $('fm-vault-error').hidden = false;
+            return;
+        }
+        if (password !== confirmation) {
+            $('fm-vault-error').textContent = 'שתי הסיסמאות אינן זהות.';
+            $('fm-vault-error').hidden = false;
+            return;
+        }
+        try {
+            const result = await securePost('/plugins/file-manager/credentials', { password, confirmation },
+                'כדי להגדיר או להחליף את המפתח האישי, הזן תחילה את סיסמת החשבון שלך ב־NodeBB.');
+            if (!result) return;
+            $('fm-vault-dialog').hidden = true;
+            await loadSecurityStatus();
+            toast('סיסמת מנהל הקבצים האישית נשמרה בהצלחה');
+        } catch (error) {
+            $('fm-vault-error').textContent = error.message || 'שמירת הסיסמה נכשלה';
+            $('fm-vault-error').hidden = false;
+        } finally {
+            $('fm-vault-password').value = '';
+            $('fm-vault-confirm').value = '';
+        }
+    }
+
+    async function resetUserPassword(item) {
+        const approved = await askConfirmation('איפוס מפתח משתמש', 'לאפס את סיסמת מנהל הקבצים של ' + item.username + '? המשתמש יידרש להגדיר מפתח אישי חדש.', 'איפוס מפתח');
+        if (!approved) return;
+        try {
+            const result = await securePost('/plugins/file-manager/credentials/reset', { uid: item.uid },
+                'איפוס מפתח משתמש הוא פעולה רגישה. הזן את סיסמת NodeBB של מנהל המערכת.');
+            if (!result) return;
+            toast('המפתח אופס. המשתמש יוכל להגדיר מפתח חדש.');
+            await openAccessPanel();
+        } catch (error) { toast(error.message || 'איפוס המפתח נכשל', true); }
+    }
+
     function formatSize(bytes) {
         if (bytes === null || bytes === undefined) return '—';
         if (bytes < 1024) return bytes + ' B';
@@ -205,10 +290,20 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         document.head.appendChild(link);
     }
 
+    let codeMirrorPathConfigured = false;
+
     function loadAmdModule(relative) {
-        const url = loadStaticUrl(relative.replace(/\.js$/, ''));
+        const moduleId = 'fm-vendor/' + relative.replace(/\.js$/, '');
+        if (!codeMirrorPathConfigured) {
+            const vendorRoot = loadStaticUrl('').replace(/\/$/, '');
+            require.config({ paths: { 'fm-vendor': vendorRoot } });
+            codeMirrorPathConfigured = true;
+        }
         return new Promise((resolve, reject) => {
-            require([url], module => resolve(module), error => reject(error));
+            require([moduleId], module => resolve(module), error => {
+                const detail = error && (error.requireModules || error.message);
+                reject(new Error('טעינת רכיב העורך נכשלה (' + relative + '): ' + String(detail || 'שגיאת AMD')));
+            });
         });
     }
 
@@ -255,7 +350,9 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 'addon/fold/xml-fold.js',
                 'addon/search/searchcursor.js',
                 'addon/dialog/dialog.js',
-                'addon/search/search.js'
+                'addon/search/search.js',
+                'addon/comment/comment.js',
+                'addon/comment/continuecomment.js'
             ];
             for (const modulePath of modules) {
                 await loadAmdModule(modulePath);
