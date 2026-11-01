@@ -37,7 +37,7 @@ jobs:
           const page = fs.readFileSync('templates/admin/plugins/file-manager.tpl', 'utf8');
           const client = fs.readFileSync('public/lib/admin.js', 'utf8');
 
-          const uploadStart = library.indexOf("router.post(\\n        '/api/v3/plugins/file-manager/upload'");
+          const uploadStart = library.indexOf("router.post(\n        '/api/v3/plugins/file-manager/upload'");
           const adminCheck = library.indexOf('adminOnly', uploadStart);
           const multipart = library.indexOf('upload.any()', uploadStart);
 
@@ -52,7 +52,7 @@ jobs:
             if (!ok) throw new Error('Failed check: ' + label);
           }
 
-          const ids = [...client.matchAll(/\\$\\('([^']+)'\\)/g)].map(match => match[1]);
+          const ids = [...client.matchAll(/\$\('([^']+)'\)/g)].map(match => match[1]);
           for (const id of new Set(ids)) {
             if (!page.includes('id="' + id + '"')) throw new Error('Missing template element: ' + id);
           }
