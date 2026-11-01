@@ -151,27 +151,61 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         return null;
     }
 
-    async function secureFilePost(route, data, description) {
+    async function unlockFileManager(description) {
         if (!state.fmPasswordConfigured) {
-            toast('לפני שינוי קבצים יש להגדיר סיסמת מנהל קבצים אישית.', true);
-            openVaultDialog();
-            return null;
+            openVaultDialog(true);
+            return false;
         }
+
         for (let attempt = 0; attempt < 3; attempt += 1) {
-            let password = await askPassword(description || 'הזן את סיסמת מנהל הקבצים האישית שלך.', 'file-manager');
-            if (password === null) return null;
+            let password = await askPassword(
+                description || 'כדי להיכנס למנהל הקבצים, הזן את המפתח האישי שלך.',
+                'file-manager'
+            );
+            if (password === null) return false;
+
             try {
-                return await request('post', route, data || {}, { 'x-file-manager-password': password });
+                await request('post', '/plugins/file-manager/unlock', {}, {
+                    'x-file-manager-password': password
+                });
+                return true;
             } catch (error) {
                 const message = String(error && error.message || '');
-                const rejected = /file manager password|password|סיסמ|מפתח מנהל הקבצים/i.test(message);
-                if (!rejected || attempt === 2) throw error;
-                toast('סיסמת מנהל הקבצים לא אושרה. נסה שוב.', true);
+                const status = Number(error && (error.status || error.statusCode));
+                const rejected = status === 401 || status === 429 ||
+                    /password|סיסמ|מפתח מנהל הקבצים|יותר מדי ניסיונות|not.authori[sz]ed/i.test(message);
+                if (!rejected || attempt === 2) {
+                    toast(message || 'אימות מנהל הקבצים נכשל.', true);
+                    return false;
+                }
+                toast('המפתח לא אושר. בדוק את הסיסמה ונסה שוב.', true);
             } finally {
                 password = '';
             }
         }
-        return null;
+        return false;
+    }
+
+    async function secureFilePost(route, data, description) {
+        if (!state.fmPasswordConfigured) {
+            toast('לפני שינוי קבצים יש להגדיר סיסמת מנהל קבצים אישית.', true);
+            openVaultDialog(true);
+            return null;
+        }
+
+        try {
+            return await request('post', route, data || {});
+        } catch (error) {
+            const message = String(error && error.message || '');
+            const status = Number(error && (error.status || error.statusCode));
+            const needsUnlock = status === 401 ||
+                /פג תוקף האימות|נדרש אימות|סיסמת מנהל הקבצים שגויה|מפתח מנהל הקבצים/i.test(message);
+            if (!needsUnlock) throw error;
+
+            const unlocked = await unlockFileManager(description);
+            if (!unlocked) return null;
+            return request('post', route, data || {});
+        }
     }
 
     async function loadSecurityStatus() {
@@ -182,10 +216,12 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         $('fm-vault-open').textContent = state.fmPasswordConfigured ? 'שינוי סיסמה' : 'הגדרת סיסמה';
     }
 
-    function openVaultDialog() {
+    function openVaultDialog(required) {
         $('fm-vault-password').value = '';
         $('fm-vault-confirm').value = '';
         $('fm-vault-error').hidden = true;
+        $('fm-vault-dialog').dataset.required = required ? 'true' : 'false';
+        $('fm-vault-cancel').hidden = Boolean(required);
         $('fm-vault-dialog').hidden = false;
         $('fm-vault-password').focus();
     }
@@ -207,11 +243,19 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
             const result = await securePost('/plugins/file-manager/credentials', { newPassword: password, confirmation },
                 'כדי להגדיר או להחליף את המפתח האישי, הזן תחילה את סיסמת החשבון שלך ב־NodeBB.');
             if (!result) return;
-            $('fm-vault-dialog').hidden = true;
+
             await loadSecurityStatus();
-            toast('סיסמת מנהל הקבצים האישית נשמרה בהצלחה');
+            await request('post', '/plugins/file-manager/unlock', {}, {
+                'x-file-manager-password': password
+            });
+
+            $('fm-vault-dialog').dataset.required = 'false';
+            $('fm-vault-cancel').hidden = false;
+            $('fm-vault-dialog').hidden = true;
+            toast('סיסמת מנהל הקבצים האישית נשמרה והגישה אומתה');
+            await load(state.path || state.homePath);
         } catch (error) {
-            $('fm-vault-error').textContent = error.message || 'שמירת הסיסמה נכשלה';
+            $('fm-vault-error').textContent = error.message || 'שמירת הסיסמה או אימות הגישה נכשלו';
             $('fm-vault-error').hidden = false;
         } finally {
             $('fm-vault-password').value = '';
@@ -302,8 +346,15 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
     function loadAmdModule(relative) {
         const moduleId = 'fm-vendor/' + relative.replace(/\.js$/, '');
         if (!codeMirrorPathConfigured) {
+            // The AMD "require" injected into a module is a context-local loader.
+            // RequireJS exposes config() on the global loader, not reliably on that local function.
+            const configLoader = window.requirejs ||
+                (window.require && typeof window.require.config === 'function' ? window.require : null);
+            if (!configLoader || typeof configLoader.config !== 'function') {
+                throw new Error('NodeBB לא חשף את ממשק RequireJS להגדרת נתיבי העורך');
+            }
             const vendorRoot = loadStaticUrl('').replace(/\/$/, '');
-            amdRequire.config({ paths: { 'fm-vendor': vendorRoot } });
+            configLoader.config({ paths: { 'fm-vendor': vendorRoot } });
             codeMirrorPathConfigured = true;
         }
         return new Promise((resolve, reject) => {
@@ -1172,6 +1223,23 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         state.editor.refresh();
     }
 
+    async function prepareWorkspaceAccess() {
+        await loadPermissions();
+        await loadSecurityStatus();
+
+        if (!state.fmPasswordConfigured) {
+            openVaultDialog(true);
+            $('fm-vault-error').textContent = 'זו הכניסה הראשונה שלך למנהל הקבצים. יש להגדיר מפתח אישי לפני הצגת הקבצים.';
+            $('fm-vault-error').hidden = false;
+            return;
+        }
+
+        const unlocked = await unlockFileManager(
+            'כדי לפתוח את מנהל הקבצים ולצפות בתיקיות, הזן את המפתח האישי שלך.'
+        );
+        if (unlocked) await load(state.homePath);
+    }
+
     async function startFileManager() {
         const bootstrap = await request('get', '/plugins/file-manager/bootstrap/status', {});
         if (bootstrap.required) {
@@ -1184,9 +1252,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
             }
             return;
         }
-        await loadPermissions();
-        await loadSecurityStatus();
-        await load(state.homePath);
+        await prepareWorkspaceAccess();
     }
 
     async function submitBootstrapKey() {
@@ -1205,9 +1271,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
             $('fm-bootstrap-key').value = '';
             $('fm-bootstrap-dialog').hidden = true;
             toast('החשבון שלך אושר כמנהל מנהל הקבצים');
-            await loadPermissions();
-            await loadSecurityStatus();
-            await load(state.homePath);
+            await prepareWorkspaceAccess();
         } catch (error) {
             $('fm-bootstrap-error').textContent = error.message || 'אימות מפתח האתחול נכשל.';
             $('fm-bootstrap-error').hidden = false;
@@ -1244,9 +1308,14 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         $('fm-bootstrap-key').addEventListener('keydown', event => { if (event.key === 'Enter') submitBootstrapKey(); });
         $('fm-vault-open').addEventListener('click', openVaultDialog);
         $('fm-vault-save').addEventListener('click', saveVaultPassword);
-        $('fm-vault-cancel').addEventListener('click', () => { $('fm-vault-dialog').hidden = true; });
+        $('fm-vault-cancel').addEventListener('click', () => {
+            if ($('fm-vault-dialog').dataset.required === 'true') return;
+            $('fm-vault-dialog').hidden = true;
+        });
         $('fm-vault-dialog').addEventListener('click', event => {
-            if (event.target === $('fm-vault-dialog')) $('fm-vault-dialog').hidden = true;
+            if (event.target === $('fm-vault-dialog') && $('fm-vault-dialog').dataset.required !== 'true') {
+                $('fm-vault-dialog').hidden = true;
+            }
         });
         $('fm-vault-confirm').addEventListener('keydown', event => { if (event.key === 'Enter') saveVaultPassword(); });
         $('fm-close-backups').addEventListener('click', () => { $('fm-backups-panel').hidden = true; });
