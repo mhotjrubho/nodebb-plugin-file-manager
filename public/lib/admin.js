@@ -374,21 +374,29 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
     }
 
     let codeMirrorPathConfigured = false;
+    let codeMirrorUseAbsoluteUrls = false;
 
     function loadAmdModule(relative) {
-        const moduleId = 'fm-vendor/' + relative.replace(/\.js$/, '');
         if (!codeMirrorPathConfigured) {
-            // The AMD "require" injected into a module is a context-local loader.
-            // RequireJS exposes config() on the global loader, not reliably on that local function.
+            // The injected AMD require is a context-local loader and has no config() method.
+            // Prefer RequireJS's global configuration API; use absolute static URLs as a
+            // compatible fallback for loaders that do not expose a global config function.
             const configLoader = window.requirejs ||
                 (window.require && typeof window.require.config === 'function' ? window.require : null);
-            if (!configLoader || typeof configLoader.config !== 'function') {
-                throw new Error('NodeBB לא חשף את ממשק RequireJS להגדרת נתיבי העורך');
+
+            if (configLoader && typeof configLoader.config === 'function') {
+                const vendorRoot = loadStaticUrl('').replace(/\/$/, '');
+                configLoader.config({ paths: { 'fm-vendor': vendorRoot } });
+            } else {
+                codeMirrorUseAbsoluteUrls = true;
             }
-            const vendorRoot = loadStaticUrl('').replace(/\/$/, '');
-            configLoader.config({ paths: { 'fm-vendor': vendorRoot } });
             codeMirrorPathConfigured = true;
         }
+
+        const moduleId = codeMirrorUseAbsoluteUrls ?
+            loadStaticUrl(relative).replace(/\.js$/, '') :
+            'fm-vendor/' + relative.replace(/\.js$/, '');
+
         return new Promise((resolve, reject) => {
             amdRequire([moduleId], module => resolve(module), error => {
                 const detail = error && (error.requireModules || error.message);
