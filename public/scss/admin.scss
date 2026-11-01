@@ -694,3 +694,447 @@
     .file-manager-page .fm-workspace-grid.has-editor .fm-editor-panel { order: 1; }
     .file-manager-page .fm-workspace-grid.has-editor .fm-file-pane { order: 2; }
 }
+
+
+/* Windows 11-style Explorer workspace. The interface language is Hebrew,
+   therefore the pane order follows RTL; paths and editor content stay LTR. */
+.file-manager-page {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 14px 18px 30px;
+    font-size: 15px;
+    font-family: "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
+}
+
+.file-manager-page .fm-topbar {
+    min-height: 76px;
+    margin-bottom: 10px;
+    padding: 12px 18px;
+    border-color: #d7dfe9;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(31, 45, 68, .04);
+}
+
+.file-manager-page .fm-brand h1 {
+    font-size: 24px;
+    font-weight: 650;
+    letter-spacing: -.25px;
+}
+
+.file-manager-page .fm-brand p,
+.file-manager-page .fm-vault-status,
+.file-manager-page .fm-role-label {
+    font-size: 14px;
+}
+
+.file-manager-page .fm-btn {
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.file-manager-page .fm-explorer-window {
+    border: 1px solid #d6dce5;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 2px 7px rgba(31, 45, 68, .06);
+}
+
+.file-manager-page .fm-ribbon {
+    border-bottom: 1px solid #dfe4eb;
+    background: #f8f9fb;
+}
+
+.file-manager-page .fm-ribbon-actions {
+    min-height: 54px;
+    padding: 6px 14px;
+    gap: 5px;
+    direction: rtl !important;
+    justify-content: flex-start;
+}
+
+.file-manager-page .fm-command {
+    min-width: 88px;
+    min-height: 40px;
+    padding: 7px 11px;
+    flex-direction: row;
+    gap: 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.file-manager-page .fm-command i {
+    font-size: 16px;
+}
+
+.file-manager-page .fm-ribbon-separator {
+    height: 25px;
+    margin: 0 4px;
+    background: #d9dfe8;
+}
+
+.file-manager-page .fm-toolbar-lower {
+    padding: 7px 14px 11px;
+    gap: 9px;
+    direction: rtl;
+}
+
+.file-manager-page .fm-address-bar,
+.file-manager-page .fm-search-box {
+    height: 40px;
+    border-color: #d5dce6;
+    border-radius: 7px;
+}
+
+.file-manager-page .fm-address-label,
+.file-manager-page #fm-breadcrumb,
+.file-manager-page .fm-address-count,
+.file-manager-page .fm-search-box input {
+    font-size: 14px;
+}
+
+.file-manager-page .fm-workspace-grid,
+.file-manager-page .fm-workspace-grid.has-editor {
+    display: grid;
+    direction: rtl !important;
+    grid-template-columns: minmax(220px, 250px) minmax(440px, 1fr) minmax(285px, 340px);
+    min-height: calc(100vh - 290px);
+    background: #fff;
+}
+
+.file-manager-page .fm-workspace-grid .fm-navigation,
+.file-manager-page .fm-workspace-grid.has-editor .fm-navigation {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    direction: rtl;
+    text-align: right;
+    border-left: 1px solid #e0e5ec;
+    border-right: 0;
+    background: #f8f9fb;
+}
+
+.file-manager-page .fm-workspace-grid .fm-file-pane,
+.file-manager-page .fm-workspace-grid.has-editor .fm-file-pane {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    direction: rtl;
+    text-align: right;
+    border-left: 1px solid #e0e5ec;
+    border-right: 0;
+}
+
+.file-manager-page .fm-workspace-grid .fm-preview-panel {
+    grid-column: 3;
+    grid-row: 1;
+    min-width: 0;
+    direction: rtl;
+    text-align: right;
+    border-left: 0;
+    border-right: 1px solid #e0e5ec;
+    background: #fff;
+}
+
+.file-manager-page .fm-workspace-grid.has-editor {
+    grid-template-columns: minmax(205px, 230px) minmax(330px, .8fr) minmax(500px, 1.25fr);
+}
+
+.file-manager-page .fm-workspace-grid.has-editor .fm-navigation {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.file-manager-page .fm-workspace-grid.has-editor .fm-file-pane {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.file-manager-page .fm-workspace-grid.has-editor .fm-editor-panel {
+    display: block;
+    grid-column: 3;
+    grid-row: 1;
+    min-width: 0;
+    direction: rtl;
+    text-align: right;
+}
+
+.file-manager-page .fm-workspace-grid.has-editor .fm-preview-panel {
+    display: none;
+}
+
+.file-manager-page .fm-nav-section {
+    padding: 17px 11px 12px;
+}
+
+.file-manager-page .fm-nav-heading {
+    padding: 0 10px 10px;
+    font-size: 14px;
+}
+
+.file-manager-page .fm-nav-button {
+    min-height: 42px;
+    margin: 3px 0;
+    padding: 9px 12px;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.file-manager-page .fm-nav-button.is-active {
+    border-color: #d4e5f9;
+    color: #155da9;
+    background: #e8f2fd;
+    box-shadow: inset -2px 0 0 #2878c8;
+}
+
+.file-manager-page .fm-pane-heading {
+    min-height: 56px;
+    padding: 10px 16px;
+    border-bottom: 1px solid #e5e9ef;
+    background: #fff;
+}
+
+.file-manager-page .fm-pane-heading strong {
+    font-size: 17px;
+    font-weight: 650;
+}
+
+.file-manager-page .fm-current-path {
+    font-size: 14px;
+}
+
+.file-manager-page .fm-list-heading {
+    min-height: 42px;
+    padding: 0 15px;
+    border-bottom-color: #e1e6ed;
+    background: #f7f8fa;
+    font-size: 14px;
+}
+
+.file-manager-page .fm-file-row {
+    min-height: 52px;
+    padding: 0 15px;
+    border-bottom-color: #edf0f4;
+}
+
+.file-manager-page .fm-file-name {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.file-manager-page .fm-file-type,
+.file-manager-page .fm-file-meta,
+.file-manager-page .fm-file-modified,
+.file-manager-page .fm-action-btn {
+    font-size: 14px;
+}
+
+.file-manager-page .fm-file-name-label {
+    unicode-bidi: plaintext;
+}
+
+.file-manager-page .fm-file-row.is-selected {
+    background: #e8f2fd;
+    box-shadow: inset -3px 0 0 #2878c8;
+}
+
+.file-manager-page .fm-file-list {
+    min-height: 560px;
+    max-height: calc(100vh - 365px);
+    background: #fff;
+}
+
+.file-manager-page .fm-preview-heading {
+    min-height: 54px;
+    padding: 12px 15px;
+    background: #f8f9fb;
+    border-bottom-color: #e3e8ef;
+}
+
+.file-manager-page .fm-preview-heading > div,
+.file-manager-page .fm-preview-file-heading strong {
+    font-size: 15px;
+}
+
+.file-manager-page .fm-preview-caption,
+.file-manager-page .fm-preview-file-heading small,
+.file-manager-page .fm-preview-stage {
+    font-size: 14px;
+}
+
+.file-manager-page .fm-editor-host {
+    direction: ltr;
+    text-align: left;
+}
+
+.file-manager-page .fm-editor-host .CodeMirror {
+    font-size: 15px;
+}
+
+@media (max-width: 1280px) {
+    .file-manager-page .fm-workspace-grid {
+        grid-template-columns: minmax(190px, 220px) minmax(350px, 1fr) minmax(250px, 290px);
+    }
+
+    .file-manager-page .fm-workspace-grid.has-editor {
+        grid-template-columns: minmax(185px, 205px) minmax(270px, .8fr) minmax(370px, 1.2fr);
+    }
+
+    .file-manager-page .fm-file-row,
+    .file-manager-page .fm-list-heading {
+        padding-right: 10px;
+        padding-left: 10px;
+    }
+}
+
+@media (max-width: 980px) {
+    .file-manager-page .fm-workspace-grid,
+    .file-manager-page .fm-workspace-grid.has-editor {
+        direction: rtl !important;
+        grid-template-columns: minmax(165px, 205px) minmax(0, 1fr);
+        min-height: 0;
+    }
+
+    .file-manager-page .fm-workspace-grid .fm-navigation,
+    .file-manager-page .fm-workspace-grid.has-editor .fm-navigation {
+        grid-column: 1;
+        grid-row: 1 / span 2;
+    }
+
+    .file-manager-page .fm-workspace-grid .fm-file-pane,
+    .file-manager-page .fm-workspace-grid.has-editor .fm-file-pane {
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    .file-manager-page .fm-workspace-grid .fm-preview-panel {
+        grid-column: 2;
+        grid-row: 2;
+        border-top: 1px solid #e0e5ec;
+    }
+
+    .file-manager-page .fm-workspace-grid.has-editor .fm-editor-panel {
+        grid-column: 2;
+        grid-row: 2;
+    }
+
+    .file-manager-page .fm-workspace-grid.has-editor .fm-preview-panel {
+        display: none;
+    }
+
+    .file-manager-page .fm-file-list {
+        min-height: 420px;
+        max-height: 65vh;
+    }
+}
+
+@media (max-width: 700px) {
+    .file-manager-page {
+        padding: 8px 4px 22px;
+    }
+
+    .file-manager-page .fm-topbar {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
+    }
+
+    .file-manager-page .fm-topbar-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .file-manager-page .fm-ribbon-actions {
+        flex-wrap: wrap;
+        gap: 3px;
+        min-height: 0;
+        padding: 7px;
+    }
+
+    .file-manager-page .fm-command {
+        min-width: 0;
+        min-height: 38px;
+        padding: 7px 8px;
+        font-size: 13px;
+    }
+
+    .file-manager-page .fm-command i {
+        font-size: 15px;
+    }
+
+    .file-manager-page .fm-toolbar-lower {
+        align-items: stretch;
+        flex-direction: column;
+        padding: 5px 8px 9px;
+    }
+
+    .file-manager-page .fm-workspace-grid,
+    .file-manager-page .fm-workspace-grid.has-editor {
+        display: flex;
+        flex-direction: column;
+        direction: rtl !important;
+        min-height: 0;
+    }
+
+    .file-manager-page .fm-workspace-grid .fm-navigation,
+    .file-manager-page .fm-workspace-grid.has-editor .fm-navigation {
+        order: 1;
+        width: 100%;
+        flex-direction: row;
+        flex-wrap: wrap;
+        border: 0;
+        border-bottom: 1px solid #e0e5ec;
+    }
+
+    .file-manager-page .fm-workspace-grid .fm-file-pane {
+        order: 2;
+        width: 100%;
+        border: 0;
+    }
+
+    .file-manager-page .fm-workspace-grid .fm-preview-panel {
+        order: 3;
+        width: 100%;
+        border: 0;
+        border-top: 1px solid #e0e5ec;
+    }
+
+    .file-manager-page .fm-workspace-grid.has-editor .fm-editor-panel {
+        order: 2;
+        width: 100%;
+    }
+
+    .file-manager-page .fm-workspace-grid.has-editor .fm-file-pane {
+        order: 3;
+    }
+
+    .file-manager-page .fm-workspace-grid.has-editor .fm-preview-panel {
+        display: none;
+    }
+
+    .file-manager-page .fm-file-list {
+        min-height: 260px;
+        max-height: 58vh;
+    }
+
+    .file-manager-page .fm-file-row {
+        min-height: 54px;
+    }
+
+    .file-manager-page .fm-nav-button {
+        min-height: 37px;
+        font-size: 14px;
+    }
+
+    .file-manager-page .fm-editor-host .CodeMirror,
+    .file-manager-page .fm-editor-host textarea#fm-editor {
+        height: 52vh;
+        min-height: 300px;
+        font-size: 14px;
+    }
+}
