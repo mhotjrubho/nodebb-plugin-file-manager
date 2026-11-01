@@ -91,11 +91,14 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         if (resolve) resolve(value);
     }
 
-    function askPassword(description) {
+    function askPassword(description, passwordKind) {
         if (state.passwordResolve) state.passwordResolve(null);
         return new Promise(resolve => {
             state.passwordResolve = resolve;
-            $('fm-password-description').textContent = description || 'להמשך הפעולה, הזן את סיסמת חשבון הפורום שלך.';
+            const kind = passwordKind === 'nodebb' ? 'nodebb' : 'file-manager';
+            $('fm-password-title').textContent = kind === 'nodebb' ? 'אימות סיסמת NodeBB' : 'נדרש מפתח אישי';
+            $('fm-password-label-text').textContent = kind === 'nodebb' ? 'סיסמת חשבון NodeBB' : 'סיסמת מנהל הקבצים';
+            $('fm-password-description').textContent = description || (kind === 'nodebb' ? 'הזן את סיסמת חשבון NodeBB שלך.' : 'הזן את סיסמת מנהל הקבצים האישית שלך.');
             $('fm-password-input').value = '';
             $('fm-password-error').hidden = true;
             $('fm-password-confirm').disabled = false;
@@ -132,7 +135,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
     async function securePost(route, data, description) {
         for (let attempt = 0; attempt < 3; attempt += 1) {
-            let password = await askPassword(description);
+            let password = await askPassword(description, 'nodebb');
             if (password === null) return null;
             try {
                 return await request('post', route, data || {}, { 'x-password-confirmation': password });
@@ -155,7 +158,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             return null;
         }
         for (let attempt = 0; attempt < 3; attempt += 1) {
-            let password = await askPassword(description || 'הזן את סיסמת מנהל הקבצים האישית שלך.');
+            let password = await askPassword(description || 'הזן את סיסמת מנהל הקבצים האישית שלך.', 'file-manager');
             if (password === null) return null;
             try {
                 return await request('post', route, data || {}, { 'x-file-manager-password': password });
@@ -798,7 +801,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             return;
         }
 
-        let password = await askPassword('הזן את סיסמת מנהל הקבצים כדי לאשר את ההעלאה.');
+        let password = await askPassword('הזן את סיסמת מנהל הקבצים כדי לאשר את ההעלאה.', 'file-manager');
         if (password === null) {
             input.value = '';
             return;
