@@ -380,7 +380,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
 
     post('/api/v3/plugins/file-manager/credentials/reset', [adminOnly, requireCurrentPassword], async req => {
         const uid = String(req.body && req.body.uid || '');
-        if (!/^[1-9]\\d{0,11}$/.test(uid) || !await user.exists(Number(uid))) {
+        if (!/^[1-9]\d{0,11}$/.test(uid) || !await user.exists(Number(uid))) {
             const error = new Error('משתמש היעד אינו תקין');
             error.status = 400;
             throw error;
