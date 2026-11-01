@@ -67,7 +67,7 @@ jobs:
             'addon/dialog/dialog.js',
             'addon/search/search.js'
           ];
-          const root = path.dirname(require.resolve('codemirror'));
+          const root = path.resolve(path.dirname(require.resolve('codemirror')), '..');
           for (const file of files) {
             if (!fs.existsSync(path.join(root, file))) throw new Error('Missing CodeMirror asset: ' + file);
           }
