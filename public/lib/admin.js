@@ -1,6 +1,6 @@
 'use strict';
 
-define('admin/plugins/file-manager', ['api'], function (api) {
+define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequire) {
     const state = {
         path: '',
         homePath: '',
@@ -247,7 +247,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const root = document.querySelector('.file-manager-page');
         root.classList.toggle('fm-readonly', !state.canEdit);
 
-        const roleText = state.role === 'admin' ? 'מנהל מערכת · גישה מלאה' :
+        const roleText = state.role === 'admin' ? 'מנהל קבצים · גישה מלאה' :
             state.role === 'editor' ? 'משתמש מורשה · עריכה' : 'משתמש מורשה · צפייה בתיקייה הציבורית';
 
         $('fm-role-label').textContent = roleText;
@@ -303,11 +303,11 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const moduleId = 'fm-vendor/' + relative.replace(/\.js$/, '');
         if (!codeMirrorPathConfigured) {
             const vendorRoot = loadStaticUrl('').replace(/\/$/, '');
-            require.config({ paths: { 'fm-vendor': vendorRoot } });
+            amdRequire.config({ paths: { 'fm-vendor': vendorRoot } });
             codeMirrorPathConfigured = true;
         }
         return new Promise((resolve, reject) => {
-            require([moduleId], module => resolve(module), error => {
+            amdRequire([moduleId], module => resolve(module), error => {
                 const detail = error && (error.requireModules || error.message);
                 reject(new Error('טעינת רכיב העורך נכשלה (' + relative + '): ' + String(detail || 'שגיאת AMD')));
             });
@@ -1058,7 +1058,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             const bold = document.createElement('strong');
             bold.textContent = 'לא הוגדרו משתמשים מורשים';
             const hint = document.createElement('span');
-            hint.textContent = 'רק מנהלי NodeBB יכולים להיכנס עד להוספת משתמשים.';
+            hint.textContent = 'הוסף משתמשים מורשים ובחר צפייה, עריכה או ניהול מלא של מנהל הקבצים.';
             empty.append(bold, hint);
             list.appendChild(empty);
             return;
@@ -1079,14 +1079,15 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             select.setAttribute('aria-label', 'רמת הרשאה עבור ' + (item.username || item.uid));
             [
                 { value: 'viewer', label: 'צפייה בלבד' },
-                { value: 'editor', label: 'צפייה ועריכה' }
+                { value: 'editor', label: 'צפייה ועריכה' },
+                { value: 'manager', label: 'מנהל קבצים · גישה מלאה' }
             ].forEach(optionData => {
                 const option = document.createElement('option');
                 option.value = optionData.value;
                 option.textContent = optionData.label;
                 select.appendChild(option);
             });
-            select.value = item.role === 'editor' ? 'editor' : 'viewer';
+            select.value = ['viewer', 'editor', 'manager'].includes(item.role) ? item.role : 'viewer';
             select.addEventListener('change', () => { state.allowedUsers[index].role = select.value; });
 
             const remove = document.createElement('button');
@@ -1118,7 +1119,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         try {
             const payload = state.allowedUsers.map(item => ({
                 uid: String(item.uid),
-                role: item.role === 'editor' ? 'editor' : 'viewer'
+                role: ['viewer', 'editor', 'manager'].includes(item.role) ? item.role : 'viewer'
             }));
             const result = await securePost('/plugins/file-manager/access', { allowedUsers: payload },
                 'שינוי הרשאות גישה הוא פעולה רגישה. הזן את סיסמת חשבון המנהל שלך.');
@@ -1171,6 +1172,50 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         state.editor.refresh();
     }
 
+    async function startFileManager() {
+        const bootstrap = await request('get', '/plugins/file-manager/bootstrap/status', {});
+        if (bootstrap.required) {
+            $('fm-bootstrap-dialog').hidden = false;
+            $('fm-bootstrap-key').focus();
+            if (!bootstrap.configured) {
+                $('fm-bootstrap-error').textContent = 'קובץ מפתח האתחול אינו מוגדר בשרת. יש ליצור אותו תחילה במסוף השרת.';
+                $('fm-bootstrap-error').hidden = false;
+                $('fm-bootstrap-submit').disabled = true;
+            }
+            return;
+        }
+        await loadPermissions();
+        await loadSecurityStatus();
+        await load(state.homePath);
+    }
+
+    async function submitBootstrapKey() {
+        const key = $('fm-bootstrap-key').value;
+        if ([...key].length < 32) {
+            $('fm-bootstrap-error').textContent = 'מפתח האתחול צריך להכיל לפחות 32 תווים.';
+            $('fm-bootstrap-error').hidden = false;
+            return;
+        }
+        $('fm-bootstrap-submit').disabled = true;
+        $('fm-bootstrap-error').hidden = true;
+        try {
+            const result = await securePost('/plugins/file-manager/bootstrap', { bootstrapKey: key },
+                'לאישור מנהל הקבצים, הזן את סיסמת חשבון NodeBB שלך. בנוסף נבדק מפתח האתחול שנשמר בשרת.');
+            if (!result) return;
+            $('fm-bootstrap-key').value = '';
+            $('fm-bootstrap-dialog').hidden = true;
+            toast('החשבון שלך אושר כמנהל מנהל הקבצים');
+            await loadPermissions();
+            await loadSecurityStatus();
+            await load(state.homePath);
+        } catch (error) {
+            $('fm-bootstrap-error').textContent = error.message || 'אימות מפתח האתחול נכשל.';
+            $('fm-bootstrap-error').hidden = false;
+        } finally {
+            $('fm-bootstrap-submit').disabled = false;
+        }
+    }
+
     function init() {
         const page = document.querySelector('.file-manager-page');
         if (!page || page.dataset.initialized === 'true') return;
@@ -1195,6 +1240,8 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         $('fm-upload-cancel').addEventListener('click', () => {
             if (state.uploadController) state.uploadController.abort();
         });
+        $('fm-bootstrap-submit').addEventListener('click', submitBootstrapKey);
+        $('fm-bootstrap-key').addEventListener('keydown', event => { if (event.key === 'Enter') submitBootstrapKey(); });
         $('fm-vault-open').addEventListener('click', openVaultDialog);
         $('fm-vault-save').addEventListener('click', saveVaultPassword);
         $('fm-vault-cancel').addEventListener('click', () => { $('fm-vault-dialog').hidden = true; });
@@ -1273,9 +1320,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         });
 
         Promise.resolve()
-            .then(loadPermissions)
-            .then(loadSecurityStatus)
-            .then(() => load(state.homePath))
+            .then(startFileManager)
             .catch(error => {
                 toast(error.message || 'טעינת ההרשאות נכשלה', true);
             });
