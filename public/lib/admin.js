@@ -669,7 +669,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         if (new Blob([content]).size > 2 * 1024 * 1024) return toast('הקובץ חורג ממגבלת העריכה של 2MB', true);
 
         try {
-            const result = await securePost('/plugins/file-manager/write', {
+            const result = await secureFilePost('/plugins/file-manager/write', {
                 path: state.editing,
                 content
             }, 'כדי לשמור שינויים בקובץ, הזן את סיסמת חשבון NodeBB שלך.');
@@ -687,7 +687,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const value = await askValue('יצירת תיקייה', 'הקלד שם לתיקייה החדשה.', '', 'שם התיקייה', 'יצירת תיקייה');
         if (!value || !value.trim()) return;
         try {
-            const result = await securePost('/plugins/file-manager/mkdir', {
+            const result = await secureFilePost('/plugins/file-manager/mkdir', {
                 path: (state.path ? state.path + '/' : '') + value.trim()
             }, 'אימות סיסמה נדרש לפני יצירת תיקייה.');
             if (!result) return;
@@ -713,7 +713,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const value = await askValue('שינוי שם', 'הקלד את השם החדש של הפריט.', item.name, 'שם חדש', 'שמירת השם');
         if (!value || !value.trim() || value.trim() === item.name) return;
         try {
-            const result = await securePost('/plugins/file-manager/rename', {
+            const result = await secureFilePost('/plugins/file-manager/rename', {
                 path: item.path,
                 newName: value.trim()
             }, 'אימות סיסמה נדרש לפני שינוי שם.');
@@ -727,7 +727,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const approved = await askConfirmation('העברה לסל המחזור', 'להעביר את "' + item.name + '" לסל המחזור? אפשר לשחזר אותו בהמשך.', 'העבר לסל המחזור');
         if (!approved) return;
         try {
-            const result = await securePost('/plugins/file-manager/delete', { path: item.path }, 'אימות סיסמה נדרש לפני העברת פריט לסל המחזור.');
+            const result = await secureFilePost('/plugins/file-manager/delete', { path: item.path }, 'אימות סיסמה נדרש לפני העברת פריט לסל המחזור.');
             if (!result) return;
             toast('הפריט הועבר לסל המחזור');
             await load(state.path);
@@ -739,7 +739,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const value = await askValue(move ? 'העברת פריט' : 'העתקת פריט', 'הזן נתיב יעד יחסי לתיקיית NodeBB.', suggested, 'למשל public/uploads/example', move ? 'העברה' : 'העתקה');
         if (!value || !value.trim()) return;
         try {
-            const result = await securePost('/plugins/file-manager/' + (move ? 'move' : 'copy'), {
+            const result = await secureFilePost('/plugins/file-manager/' + (move ? 'move' : 'copy'), {
                 path: item.path,
                 destination: value.trim()
             }, 'אימות סיסמה נדרש לפני העתקה או העברה.');
@@ -801,7 +801,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const approved = await askConfirmation('חילוץ ארכיון ZIP', 'לחלץ את הארכיון לתיקייה הנוכחית? קבצים קיימים לא יידרסו.', 'חלץ ארכיון');
         if (!approved) return;
         try {
-            const result = await securePost('/plugins/file-manager/extract', {
+            const result = await secureFilePost('/plugins/file-manager/extract', {
                 path: folder,
                 destination: state.path
             }, 'אימות סיסמה נדרש לפני חילוץ ארכיון.');
@@ -868,7 +868,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const approved = await askConfirmation('שחזור פריט', 'לשחזר את הפריט? אם כבר קיים פריט באותו נתיב, השחזור לא ידרוס אותו.\n' + item.path, 'שחזור');
         if (!approved) return;
         try {
-            const result = await securePost('/plugins/file-manager/restore', { id: item.id }, 'אימות סיסמה נדרש לפני שחזור גיבוי.');
+            const result = await secureFilePost('/plugins/file-manager/restore', { id: item.id }, 'אימות סיסמה נדרש לפני שחזור גיבוי.');
             if (!result) return;
             toast('השחזור הושלם בהצלחה');
             await openBackups();
@@ -880,7 +880,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const approved = await askConfirmation('מחיקה לצמיתות', 'למחוק לצמיתות את הפריט ואת כל תוכנו? לא ניתן לשחזר פעולה זו.\n' + item.path, 'מחיקה לצמיתות');
         if (!approved) return;
         try {
-            const result = await securePost('/plugins/file-manager/purge', { id: item.id }, 'אימות סיסמה נדרש לפני מחיקה לצמיתות.');
+            const result = await secureFilePost('/plugins/file-manager/purge', { id: item.id }, 'אימות סיסמה נדרש לפני מחיקה לצמיתות.');
             if (!result) return;
             toast('הפריט נמחק לצמיתות');
             await openBackups();
@@ -954,6 +954,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                     username: user.username,
                     userslug: user.userslug,
                     picture: user.picture,
+                    hasPassword: false,
                     role: 'viewer'
                 });
                 renderAllowedUsers();
@@ -1016,7 +1017,18 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 renderAllowedUsers();
                 renderUserSearchResults();
             });
-            row.append(name, select, remove);
+            const keyStatus = document.createElement('span');
+            keyStatus.className = item.hasPassword ? 'fm-key-status is-set' : 'fm-key-status is-missing';
+            keyStatus.textContent = item.hasPassword ? 'מפתח מוגדר' : 'ללא מפתח';
+
+            const reset = document.createElement('button');
+            reset.type = 'button';
+            reset.className = 'fm-action-btn';
+            reset.textContent = item.hasPassword ? 'איפוס מפתח' : 'ללא מפתח';
+            reset.disabled = !item.hasPassword;
+            reset.addEventListener('click', event => { event.stopPropagation(); resetUserPassword(item); });
+
+            row.append(name, select, keyStatus, reset, remove);
             list.appendChild(row);
         });
     }
