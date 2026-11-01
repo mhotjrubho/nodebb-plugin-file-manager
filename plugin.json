@@ -1,8 +1,11 @@
 {
   "id": "nodebb-plugin-file-manager",
   "name": "NodeBB File Manager",
-  "description": "Secure file manager for NodeBB administrators",
+  "description": "Secure file manager for NodeBB administrators and authorized users",
   "library": "./library.js",
+  "staticDirs": {
+    "vendor": "node_modules/codemirror"
+  },
   "hooks": [
     {
       "hook": "static:app.load",
