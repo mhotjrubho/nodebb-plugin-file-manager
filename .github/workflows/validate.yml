@@ -116,6 +116,8 @@ jobs:
             [client.includes('secureFilePost') && client.includes('x-file-manager-password') && client.includes('secureFileGet'), 'personal key session protects file reads and mutations'],
             [client.includes("newPassword: password") && library.includes('req.body && req.body.newPassword'), 'vault setup does not shadow NodeBB reauthentication password'],
             [page.includes('fm-preview-image') && page.includes('fm-preview-panel'), 'image preview UI'],
+            [page.includes('fm-tab-strip') && page.includes('fm-tab-title') && page.includes('fm-statusbar') && page.includes('fm-status-path'), 'Windows Explorer tab and status bars'],
+            [page.includes('fm-history-back') && page.includes('fm-history-forward') && client.includes('navigationHistory') && client.includes('navigateHistory'), 'working back and forward folder navigation'],
             [page.includes('fm-vault-dialog') && page.includes('fm-upload-cancel'), 'vault and upload cancel UI'],
             [page.includes('fm-bootstrap-dialog') && page.includes('fm-bootstrap-key'), 'first-time server bootstrap dialog'],
             [client.includes('startFileManager') && client.includes('submitBootstrapKey'), 'bootstrap UI startup and submission handlers'],
