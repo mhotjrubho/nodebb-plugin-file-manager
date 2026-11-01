@@ -279,6 +279,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
             await request('post', '/plugins/file-manager/unlock', {}, {
                 'x-file-manager-password': password
             });
+            state.fmUnlockedUntil = Date.now() + (15 * 60 * 1000);
 
             $('fm-vault-dialog').dataset.required = 'false';
             $('fm-vault-cancel').hidden = false;
