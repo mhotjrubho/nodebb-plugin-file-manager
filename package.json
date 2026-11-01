@@ -1,7 +1,7 @@
 {
   "name": "nodebb-plugin-file-manager",
-  "version": "0.7.0",
-  "description": "Windows Explorer-style NodeBB file manager with trusted-manager bootstrap, per-user password vault and CodeMirror",
+  "version": "0.8.0",
+  "description": "Windows Explorer-style NodeBB file manager with RTL layout, session unlock, trusted-manager bootstrap and CodeMirror",
   "main": "library.js",
   "license": "MIT",
   "repository": {
