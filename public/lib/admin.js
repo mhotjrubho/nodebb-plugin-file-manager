@@ -419,9 +419,9 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
             const actions = document.createElement('div');
             actions.className = 'fm-file-actions';
-            if (state.canEdit && item.type === 'file') {
-                actions.appendChild(makeButton('עריכה', 'fa-edit', () => openFile(item.path)));
-                if (/\.zip$/i.test(item.name)) actions.appendChild(makeButton('חילוץ', 'fa-file-archive', () => extractZip(item.path)));
+            if (item.type === 'file') {
+                actions.appendChild(makeButton(state.canEdit ? 'עריכה' : 'צפייה', state.canEdit ? 'fa-edit' : 'fa-eye', () => openFile(item.path)));
+                if (state.canEdit && /\.zip$/i.test(item.name)) actions.appendChild(makeButton('חילוץ', 'fa-file-archive', () => extractZip(item.path)));
             }
             if (state.canEdit && (item.type === 'file' || item.type === 'directory')) {
                 actions.appendChild(makeButton('העתקה', 'fa-copy', () => copyMove(item, false)));
@@ -838,9 +838,12 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         } catch (error) { toast(error.message || 'שמירת ההרשאות נכשלה', true); }
     }
 
-    function closeEditor() {
+    async function closeEditor() {
         const dirty = state.editor ? state.editor.getValue() !== state.original : $('fm-editor').value !== state.original;
-        if (dirty && !window.confirm('יש שינויים שלא נשמרו. לסגור את העורך?')) return;
+        if (dirty) {
+            const approved = await askConfirmation('סגירת העורך', 'יש שינויים שלא נשמרו. לסגור את העורך ולאבד אותם?', 'סגירה ללא שמירה');
+            if (!approved) return;
+        }
         $('fm-editor-panel').hidden = true;
         $('fm-workspace-grid').classList.remove('has-editor');
         state.editing = null;
@@ -848,8 +851,10 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         state.dirty = false;
     }
 
-    function discardEditorChanges() {
+    async function discardEditorChanges() {
         if (!state.editor || !state.dirty) return;
+        const approved = await askConfirmation('ביטול שינויים', 'להחזיר את תוכן העורך לגרסה האחרונה שנשמרה?', 'ביטול שינויים');
+        if (!approved) return;
         state.editor.setValue(state.original);
         state.editor.clearHistory();
         updateEditorStatus();
