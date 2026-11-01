@@ -349,6 +349,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 'addon/edit/closebrackets.js',
                 'addon/edit/matchbrackets.js',
                 'addon/edit/matchtags.js',
+                'addon/edit/closetag.js',
                 'addon/selection/active-line.js',
                 'addon/display/fullscreen.js',
                 'addon/fold/foldcode.js',
@@ -377,6 +378,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 autoCloseBrackets: true,
                 styleActiveLine: true,
                 matchTags: { bothTags: true },
+                autoCloseTags: true,
                 foldGutter: true,
                 gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
                 extraKeys: {
