@@ -96,7 +96,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
 
     const deny = (res, status, message) => helpers.formatApiResponse(status, res, new Error(message));
 
-    const managerAccess = async (req, res, next) => {
+    const managerIdentity = async (req, res, next) => {
         try {
             const role = await getRole(req.uid);
             if (!role) return deny(res, 403, '[[error:no-privileges]]');
@@ -105,6 +105,25 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
         } catch (error) {
             winston.error('[file-manager] Access check failed: ' + (error.stack || error));
             return deny(res, 500, 'שגיאה בבדיקת הרשאות מנהל הקבצים');
+        }
+    };
+
+    const managerAccess = async (req, res, next) => {
+        try {
+            const role = req.fileManagerRole || await getRole(req.uid);
+            if (!role) return deny(res, 403, '[[error:no-privileges]]');
+            if (role === 'viewer') {
+                const requestedPath = String(req.query.path || '').replace(/\\/g, '/');
+                const insidePublic = requestedPath === 'public' || requestedPath.startsWith('public/');
+                if (!insidePublic) {
+                    return deny(res, 403, 'הרשאת צפייה מוגבלת לתיקייה public בלבד');
+                }
+            }
+            req.fileManagerRole = role;
+            return next();
+        } catch (error) {
+            winston.error('[file-manager] Path permission check failed: ' + (error.stack || error));
+            return deny(res, 500, 'שגיאה בבדיקת הרשאות נתיב');
         }
     };
 
@@ -140,8 +159,9 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
     const post = (route, guards, handler) =>
         routeHelpers.setupApiRoute(router, 'post', route, guards, endpoint(handler));
 
-    get('/api/v3/plugins/file-manager/permissions', [managerAccess], async req => ({
+    get('/api/v3/plugins/file-manager/permissions', [managerIdentity], async req => ({
         role: req.fileManagerRole,
+        homePath: req.fileManagerRole === 'viewer' ? 'public' : '',
         canManageAccess: req.fileManagerRole === 'admin',
         canEdit: req.fileManagerRole === 'admin' || req.fileManagerRole === 'editor'
     }));
@@ -149,7 +169,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
     get('/api/v3/plugins/file-manager/list', [managerAccess], req => FileManager.list(req.query.path || ''));
     get('/api/v3/plugins/file-manager/read', [managerAccess], req => FileManager.read(req.query.path));
     get('/api/v3/plugins/file-manager/search', [managerAccess], req => Extra.search(req.query.q, req.query.path || ''));
-    get('/api/v3/plugins/file-manager/backups', [managerAccess], () => Extra.backups());
+    get('/api/v3/plugins/file-manager/backups', [editorAccess], () => Extra.backups());
 
     // Access management is administrator-only. Search returns only public profile fields.
     get('/api/v3/plugins/file-manager/access', [adminOnly], async () => {
