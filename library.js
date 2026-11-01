@@ -1,6 +1,9 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs').promises;
+const os = require('os');
+const path = require('path');
 const routeHelpers = require.main.require('./src/routes/helpers');
 const controllerHelpers = require.main.require('./src/controllers/helpers');
 const user = require.main.require('./src/user');
@@ -18,6 +21,7 @@ const FM_PASSWORD_MAX_LENGTH = 256;
 const FM_PASSWORD_LOCK_MS = 15 * 60 * 1000;
 const FM_PASSWORD_MAX_ATTEMPTS = 5;
 const passwordFailures = new Map();
+const BOOTSTRAP_SECRET_FILE = path.join(os.homedir(), '.nodebb-file-manager-bootstrap');
 let settingsWriteQueue = Promise.resolve();
 
 async function getPluginSettings() {
@@ -68,8 +72,19 @@ async function getAllowedUsers() {
     return Array.isArray(settings.allowedUsers) ? settings.allowedUsers : [];
 }
 
+async function getFileManagerAdmins() {
+    const settings = await getPluginSettings();
+    return Array.isArray(settings.managerAdmins) ? settings.managerAdmins.map(String) : [];
+}
+
+async function isFileManagerAdmin(uid) {
+    if (!uid || uid < 1) return false;
+    const [admins, allowed] = await Promise.all([getFileManagerAdmins(), getAllowedUsers()]);
+    return admins.includes(String(uid)) || allowed.some(item => String(item.uid) === String(uid) && item.role === 'manager');
+}
+
 async function getRole(uid) {
-    if (uid > 0 && await user.isAdministrator(uid)) return 'admin';
+    if (await isFileManagerAdmin(uid)) return 'admin';
     const allowed = await getAllowedUsers();
     const entry = allowed.find(item => String(item.uid) === String(uid));
     return entry && ['viewer', 'editor'].includes(entry.role) ? entry.role : null;
@@ -77,6 +92,31 @@ async function getRole(uid) {
 
 async function isAdministrator(req) {
     return Boolean(req.uid > 0 && await user.isAdministrator(req.uid));
+}
+
+async function getBootstrapSecret() {
+    let stat;
+    try {
+        stat = await fs.stat(BOOTSTRAP_SECRET_FILE);
+    } catch (error) {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+    }
+    if (!stat.isFile() || (stat.mode & 0o077) !== 0) {
+        throw new Error('קובץ מפתח האתחול חייב להיות קובץ רגיל בהרשאות 0600');
+    }
+    const secret = (await fs.readFile(BOOTSTRAP_SECRET_FILE, 'utf8')).replace(/[\\r\\n]+$/, '');
+    if (Buffer.byteLength(secret, 'utf8') < 32 || Buffer.byteLength(secret, 'utf8') > 256) {
+        throw new Error('מפתח האתחול בשרת חייב להכיל בין 32 ל־256 בתים');
+    }
+    return secret;
+}
+
+function safeSecretEquals(expected, supplied) {
+    if (typeof supplied !== 'string' || !supplied) return false;
+    const a = Buffer.from(expected, 'utf8');
+    const b = Buffer.from(supplied, 'utf8');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 async function saveAllowedUsers(input) {
@@ -90,7 +130,7 @@ async function saveAllowedUsers(input) {
     for (const item of input) {
         const uid = String(item && item.uid || '').trim();
         const role = String(item && item.role || 'viewer');
-        if (!/^[1-9]\d{0,11}$/.test(uid) || !['viewer', 'editor'].includes(role)) {
+        if (!/^[1-9]\d{0,11}$/.test(uid) || !['viewer', 'editor', 'manager'].includes(role)) {
             const error = new Error('רשימת המשתמשים המורשים אינה תקינה');
             error.status = 400;
             throw error;
@@ -112,7 +152,7 @@ async function saveAllowedUsers(input) {
 plugin.init = async function ({ router, middleware }) {
     const pageAccess = async (req, res, next) => {
         try {
-            if (!await getRole(req.uid)) return res.status(403).send('אין לך הרשאה לגשת למנהל הקבצים');
+            if (!await getRole(req.uid) && !await isAdministrator(req)) return res.status(403).send('אין לך הרשאה לגשת למנהל הקבצים');
             return next();
         } catch (error) {
             winston.error('[file-manager] Page access check failed: ' + (error.stack || error));
@@ -193,7 +233,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
 
     const adminOnly = async (req, res, next) => {
         try {
-            if (!await isAdministrator(req)) return deny(res, 403, '[[error:no-privileges]]');
+            if (!await isFileManagerAdmin(req.uid)) return deny(res, 403, '[[error:no-privileges]]');
             return next();
         } catch (error) {
             winston.error('[file-manager] Administrator check failed: ' + (error.stack || error));
@@ -258,6 +298,43 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
         routeHelpers.setupApiRoute(router, 'get', route, guards, endpoint(handler));
     const post = (route, guards, handler) =>
         routeHelpers.setupApiRoute(router, 'post', route, guards, endpoint(handler));
+
+    get('/api/v3/plugins/file-manager/bootstrap/status', [], async req => {
+        if (await getRole(req.uid)) return { required: false, configured: false };
+        if (!await isAdministrator(req)) {
+            const error = new Error('[[error:no-privileges]]');
+            error.status = 403;
+            throw error;
+        }
+        return { required: true, configured: Boolean(await getBootstrapSecret()) };
+    });
+
+    post('/api/v3/plugins/file-manager/bootstrap', [requireCurrentPassword], async req => {
+        if (!await isAdministrator(req)) {
+            const error = new Error('רק מנהל NodeBB יכול לבצע אתחול ראשוני');
+            error.status = 403;
+            throw error;
+        }
+        const secret = await getBootstrapSecret();
+        if (!secret) {
+            const error = new Error('מפתח האתחול לא הוגדר בשרת. יש ליצור את קובץ המפתח לפי הוראות ההתקנה.');
+            error.status = 503;
+            throw error;
+        }
+        if (!safeSecretEquals(secret, req.body && req.body.bootstrapKey)) {
+            const error = new Error('מפתח האתחול של השרת שגוי');
+            error.status = 401;
+            throw error;
+        }
+        const managerAdmins = await getFileManagerAdmins();
+        const uid = String(req.uid);
+        if (!managerAdmins.includes(uid)) {
+            managerAdmins.push(uid);
+            await updatePluginSettings({ managerAdmins });
+        }
+        winston.info('[file-manager:audit] Bootstrap manager authorized uid ' + uid);
+        return { success: true, role: 'admin' };
+    });
 
     get('/api/v3/plugins/file-manager/permissions', [managerIdentity], async req => ({
         role: req.fileManagerRole,
