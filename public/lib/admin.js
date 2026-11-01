@@ -439,6 +439,15 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
     async function load(folder) {
         state.path = folder || '';
+        state.selectedItem = null;
+        $('fm-preview-title').textContent = 'תצוגה מקדימה';
+        $('fm-preview-meta').textContent = '';
+        $('fm-preview-image').hidden = true;
+        $('fm-preview-content').replaceChildren();
+        $('fm-preview-empty').hidden = false;
+        $('fm-preview-empty').textContent = 'בחר קובץ כדי לראות פרטים או תצוגה מקדימה.';
+        $('fm-preview-edit').hidden = true;
+        document.querySelectorAll('.fm-nav-button').forEach(button => button.classList.toggle('is-active', button.dataset.path === state.path));
         $('fm-current-path').textContent = '/' + state.path;
         $('fm-breadcrumb').textContent = '/' + state.path;
         $('fm-up').disabled = !state.path || state.path === state.homePath;
@@ -472,20 +481,95 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         }
     }
 
+    function fileIcon(item) {
+        if (item.type === 'directory') return 'fa-folder';
+        if (item.type === 'symlink') return 'fa-link';
+        const ext = String(item.name || '').split('.').pop().toLowerCase();
+        if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'svg', 'ico'].includes(ext)) return 'fa-file-image';
+        if (['zip', 'gz', 'tar', '7z', 'rar'].includes(ext)) return 'fa-file-archive';
+        if (['js', 'mjs', 'cjs', 'json', 'php', 'py', 'html', 'htm', 'css', 'scss', 'xml', 'sql', 'sh', 'yml', 'yaml', 'md'].includes(ext)) return 'fa-file-code';
+        if (ext === 'pdf') return 'fa-file-pdf';
+        return 'fa-file-alt';
+    }
+
+    async function selectItem(item) {
+        state.selectedItem = item;
+        document.querySelectorAll('.fm-file-row.is-selected').forEach(row => row.classList.remove('is-selected'));
+        const selectedPath = String(item.path || '');
+        const row = Array.from(document.querySelectorAll('.fm-file-row')).find(node => node.dataset.path === selectedPath);
+        if (row) row.classList.add('is-selected');
+
+        $('fm-preview-title').textContent = item.name || selectedPath.split('/').pop();
+        $('fm-preview-meta').textContent = item.type === 'directory' ? 'תיקייה' : formatSize(item.size) + ' · ' + formatDate(item.modified);
+        $('fm-preview-content').replaceChildren();
+        $('fm-preview-empty').hidden = true;
+        $('fm-preview-image').hidden = true;
+        $('fm-preview-edit').hidden = false;
+        $('fm-preview-edit').textContent = item.type === 'directory' ? 'פתח תיקייה' : (state.canEdit ? 'ערוך קובץ' : 'פתח לצפייה');
+
+        if (item.type === 'directory') {
+            $('fm-preview-content').appendChild(fa('fa-folder-open'));
+            const note = document.createElement('p');
+            note.textContent = 'לחץ פעמיים על התיקייה או על הכפתור כדי לפתוח אותה.';
+            $('fm-preview-content').appendChild(note);
+            return;
+        }
+
+        if (item.type !== 'file') {
+            $('fm-preview-empty').hidden = false;
+            $('fm-preview-empty').textContent = 'אין תצוגה מקדימה לפריט זה.';
+            $('fm-preview-edit').hidden = true;
+            return;
+        }
+
+        const loading = document.createElement('div');
+        loading.className = 'fm-preview-loading';
+        loading.append(fa('fa-circle-notch fa-spin'), document.createTextNode(' טוען תצוגה מקדימה…'));
+        $('fm-preview-content').appendChild(loading);
+        try {
+            const result = await request('get', '/plugins/file-manager/preview', { path: item.path });
+            $('fm-preview-content').replaceChildren();
+            if (result.kind === 'image') {
+                $('fm-preview-image').src = 'data:' + result.mime + ';base64,' + result.data;
+                $('fm-preview-image').alt = item.name;
+                $('fm-preview-image').hidden = false;
+            } else if (result.kind === 'text') {
+                const pre = document.createElement('pre');
+                pre.className = 'fm-preview-code';
+                pre.dir = 'ltr';
+                pre.textContent = result.content;
+                $('fm-preview-content').appendChild(pre);
+                if (result.truncated) {
+                    const note = document.createElement('small');
+                    note.textContent = 'התצוגה קוצרה. פתח את הקובץ כדי לראות את כולו.';
+                    $('fm-preview-content').appendChild(note);
+                }
+            } else {
+                $('fm-preview-empty').hidden = false;
+                $('fm-preview-empty').textContent = 'אין תצוגה מקדימה לסוג הקובץ הזה. אפשר לפתוח אותו בעורך אם הוא קובץ טקסט נתמך.';
+            }
+        } catch (error) {
+            $('fm-preview-content').replaceChildren();
+            $('fm-preview-empty').hidden = false;
+            $('fm-preview-empty').textContent = error.message || 'לא ניתן להציג תצוגה מקדימה.';
+        }
+    }
+
     function renderFiles(entries) {
         const list = $('fm-file-list');
         list.replaceChildren();
+        list.classList.toggle('is-grid', state.viewMode === 'grid');
         $('fm-item-count').textContent = String(entries.length);
 
         if (!entries.length) {
             const empty = document.createElement('div');
             empty.className = 'fm-empty';
-            empty.appendChild(fa('fa-folder-open'));
-            const bold = document.createElement('strong');
-            bold.textContent = 'התיקייה ריקה';
+            empty.append(fa('fa-folder-open'));
+            const title = document.createElement('strong');
+            title.textContent = 'התיקייה ריקה';
             const hint = document.createElement('span');
             hint.textContent = 'אפשר להעלות קבצים או ליצור פריט חדש';
-            empty.append(bold, hint);
+            empty.append(title, hint);
             list.appendChild(empty);
             return;
         }
@@ -493,26 +577,33 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         entries.forEach(item => {
             const row = document.createElement('div');
             row.className = 'fm-file-row';
+            row.dataset.path = item.path;
+            row.tabIndex = 0;
+            if (state.selectedItem && state.selectedItem.path === item.path) row.classList.add('is-selected');
 
             const name = document.createElement('div');
             name.className = 'fm-file-name' + (item.type === 'directory' ? ' is-directory' : '');
-            const fileIcon = document.createElement('span');
-            fileIcon.className = 'fm-file-icon' + (item.type === 'directory' ? ' is-folder' : '');
-            fileIcon.appendChild(fa(item.type === 'directory' ? 'fa-folder' : item.type === 'symlink' ? 'fa-link' : 'fa-file-alt'));
+            const fileIconNode = document.createElement('span');
+            fileIconNode.className = 'fm-file-icon' + (item.type === 'directory' ? ' is-folder' : '');
+            fileIconNode.appendChild(fa(fileIcon(item)));
             const label = document.createElement('span');
             label.className = 'fm-file-name-label';
             label.dir = 'auto';
             label.textContent = item.name;
-            name.append(fileIcon, label);
-            if (item.type === 'directory') name.addEventListener('click', () => load(item.path));
+            name.append(fileIconNode, label);
 
             const type = document.createElement('span');
             type.className = 'fm-file-type' + (item.type === 'directory' ? ' is-folder' : '');
-            type.textContent = item.type === 'directory' ? 'תיקייה' : item.type === 'symlink' ? 'קישור' : item.type === 'other' ? 'אחר' : 'קובץ';
+            type.textContent = item.type === 'directory' ? 'תיקייה' : item.type === 'symlink' ? 'קישור' :
+                item.type === 'other' ? 'אחר' : (String(item.name).split('.').pop().toUpperCase() || 'קובץ');
 
             const size = document.createElement('span');
             size.className = 'fm-file-meta';
             size.textContent = formatSize(item.size);
+
+            const modified = document.createElement('span');
+            modified.className = 'fm-file-modified';
+            modified.textContent = formatDate(item.modified);
 
             const actions = document.createElement('div');
             actions.className = 'fm-file-actions';
@@ -523,11 +614,22 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             if (state.canEdit && (item.type === 'file' || item.type === 'directory')) {
                 actions.appendChild(makeButton('העתקה', 'fa-copy', () => copyMove(item, false)));
                 actions.appendChild(makeButton('העברה', 'fa-exchange-alt', () => copyMove(item, true)));
-                actions.appendChild(makeButton('שם', 'fa-pen', () => renameItem(item)));
+                actions.appendChild(makeButton('שינוי שם', 'fa-pen', () => renameItem(item)));
                 actions.appendChild(makeButton('מחיקה', 'fa-trash-alt', () => removeItem(item), true));
             }
 
-            row.append(name, type, size, actions);
+            row.append(name, type, size, modified, actions);
+            row.addEventListener('click', () => selectItem(item));
+            row.addEventListener('dblclick', () => {
+                if (item.type === 'directory') load(item.path);
+                else if (item.type === 'file') openFile(item.path);
+            });
+            row.addEventListener('keydown', event => {
+                if (event.key === 'Enter') {
+                    if (item.type === 'directory') load(item.path);
+                    else if (item.type === 'file') openFile(item.path);
+                }
+            });
             list.appendChild(row);
         });
     }
@@ -711,7 +813,6 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
     async function openBackups() {
         $('fm-backups-panel').hidden = false;
-        $('fm-backups-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
         const list = $('fm-backups-list');
         list.replaceChildren();
         const loading = document.createElement('div');
@@ -789,7 +890,6 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     async function openAccessPanel() {
         if (!state.canManageAccess) return;
         $('fm-access-panel').hidden = false;
-        $('fm-access-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
         $('fm-user-search-results').replaceChildren();
         try {
             const result = await request('get', '/plugins/file-manager/access', {});
