@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  syntax:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,3 +27,33 @@ jobs:
         run: |
           node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"
           node -e "JSON.parse(require('fs').readFileSync('plugin.json', 'utf8'))"
+      - name: Verify security and interface invariants
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const manager = fs.readFileSync('lib/file-manager.js', 'utf8');
+          const extra = fs.readFileSync('lib/file-manager-extra.js', 'utf8');
+          const library = fs.readFileSync('library.js', 'utf8');
+          const page = fs.readFileSync('templates/admin/plugins/file-manager.tpl', 'utf8');
+          const client = fs.readFileSync('public/lib/admin.js', 'utf8');
+
+          const uploadStart = library.indexOf("router.post(\\n        '/api/v3/plugins/file-manager/upload'");
+          const adminCheck = library.indexOf('adminOnly', uploadStart);
+          const multipart = library.indexOf('upload.any()', uploadStart);
+
+          const checks = [
+            [manager.includes('parts[0] === BACKUP_NAME'), 'protected backup path'],
+            [manager.includes('fs.promises.rename(target, trashFile)'), 'recycle bin deletion'],
+            [extra.includes('MAX_TOTAL') && extra.includes('5000'), 'upload and archive limits'],
+            [extra.includes('async function purge(id)'), 'explicit permanent deletion'],
+            [uploadStart >= 0 && adminCheck > uploadStart && multipart > adminCheck, 'authorization before multipart upload'],
+          ];
+          for (const [ok, label] of checks) {
+            if (!ok) throw new Error('Failed check: ' + label);
+          }
+
+          const ids = [...client.matchAll(/\\$\\('([^']+)'\\)/g)].map(match => match[1]);
+          for (const id of new Set(ids)) {
+            if (!page.includes('id="' + id + '"')) throw new Error('Missing template element: ' + id);
+          }
+          NODE
