@@ -762,13 +762,27 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     async function uploadFiles(input) {
         const files = Array.from(input.files || []);
         if (!files.length) return;
-        let password = await askPassword('הזן סיסמה פעם אחת כדי לאשר את כל מנות ההעלאה. הסיסמה לא נשמרת בתוסף.');
+        if (!state.fmPasswordConfigured) {
+            input.value = '';
+            toast('יש להגדיר תחילה סיסמת מנהל קבצים אישית.', true);
+            openVaultDialog();
+            return;
+        }
+
+        let password = await askPassword('הזן את סיסמת מנהל הקבצים כדי לאשר את ההעלאה.');
         if (password === null) {
             input.value = '';
             return;
         }
 
         let count = 0;
+        state.uploadController = new AbortController();
+        state.uploadActive = true;
+        $('fm-upload-progress').hidden = false;
+        $('fm-upload-progress').value = 0;
+        $('fm-upload-progress-label').textContent = 'מתחיל העלאה של ' + files.length + ' קבצים…';
+        $('fm-upload-cancel').disabled = false;
+
         try {
             for (let offset = 0; offset < files.length; offset += 20) {
                 const batch = files.slice(offset, offset + 20);
@@ -780,20 +794,45 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 });
                 form.append('relativePaths', JSON.stringify(paths));
                 form.append('path', state.path);
-                const result = await request('post', '/plugins/file-manager/upload', form, {
-                    'x-password-confirmation': password
+
+                const response = await fetch((config.relative_path || '') + '/api/v3/plugins/file-manager/upload', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'x-csrf-token': config.csrf_token,
+                        'x-file-manager-password': password
+                    },
+                    body: form,
+                    signal: state.uploadController.signal
                 });
+                const raw = await response.json().catch(() => ({}));
+                const result = raw && raw.response ? raw.response : raw;
+                if (!response.ok) {
+                    const message = result && result.status && result.status.message || result.error || response.statusText;
+                    const error = new Error(message || 'ההעלאה נכשלה');
+                    error.status = response.status;
+                    throw error;
+                }
                 count += result.count || batch.length;
-                toast('הועלו ' + count + ' מתוך ' + files.length + ' קבצים');
+                const percent = Math.round((count / files.length) * 100);
+                $('fm-upload-progress').value = percent;
+                $('fm-upload-progress-label').textContent = 'הועלו ' + count + ' מתוך ' + files.length + ' קבצים (' + percent + '%)';
             }
             toast('ההעלאה הושלמה: ' + count + ' קבצים');
-            await load(state.path);
         } catch (error) {
-            toast('ההעלאה נעצרה לאחר ' + count + ' קבצים: ' + (error.message || 'שגיאה'), true);
-            await load(state.path);
+            if (error.name === 'AbortError') {
+                toast('ההעלאה בוטלה לאחר ' + count + ' קבצים. ייתכן שהמנה האחרונה כבר הושלמה בשרת.');
+            } else {
+                toast('ההעלאה נעצרה לאחר ' + count + ' קבצים: ' + (error.message || 'שגיאה'), true);
+            }
         } finally {
             password = '';
+            state.uploadActive = false;
+            state.uploadController = null;
+            $('fm-upload-progress').hidden = true;
+            $('fm-upload-cancel').disabled = true;
             input.value = '';
+            await load(state.path);
         }
     }
 
@@ -1106,6 +1145,16 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         $('fm-search-input').addEventListener('keydown', event => { if (event.key === 'Enter') searchFiles(); });
         $('fm-search-clear').addEventListener('click', () => { $('fm-search-input').value = ''; load(state.path); });
         $('fm-backups').addEventListener('click', openBackups);
+        $('fm-upload-cancel').addEventListener('click', () => {
+            if (state.uploadController) state.uploadController.abort();
+        });
+        $('fm-vault-open').addEventListener('click', openVaultDialog);
+        $('fm-vault-save').addEventListener('click', saveVaultPassword);
+        $('fm-vault-cancel').addEventListener('click', () => { $('fm-vault-dialog').hidden = true; });
+        $('fm-vault-dialog').addEventListener('click', event => {
+            if (event.target === $('fm-vault-dialog')) $('fm-vault-dialog').hidden = true;
+        });
+        $('fm-vault-confirm').addEventListener('keydown', event => { if (event.key === 'Enter') saveVaultPassword(); });
         $('fm-close-backups').addEventListener('click', () => { $('fm-backups-panel').hidden = true; });
         $('fm-access-open').addEventListener('click', openAccessPanel);
         $('fm-access-close').addEventListener('click', () => { $('fm-access-panel').hidden = true; });
@@ -1119,6 +1168,28 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         $('fm-editor-wrap').addEventListener('click', toggleWrap);
         $('fm-editor-fullscreen').addEventListener('click', toggleFullScreen);
         $('fm-editor-find').addEventListener('click', () => { if (state.editor) state.editor.execCommand('findPersistent'); });
+        $('fm-preview-edit').addEventListener('click', () => {
+            if (!state.selectedItem) return;
+            if (state.selectedItem.type === 'directory') load(state.selectedItem.path);
+            else openFile(state.selectedItem.path);
+        });
+        $('fm-view-list').addEventListener('click', () => {
+            state.viewMode = 'list';
+            $('fm-view-list').classList.add('is-active');
+            $('fm-view-grid').classList.remove('is-active');
+            request('get', '/plugins/file-manager/list', { path: state.path }).then(result => renderFiles(result.entries || []))
+                .catch(error => toast(error.message || 'טעינת התיקייה נכשלה', true));
+        });
+        $('fm-view-grid').addEventListener('click', () => {
+            state.viewMode = 'grid';
+            $('fm-view-grid').classList.add('is-active');
+            $('fm-view-list').classList.remove('is-active');
+            request('get', '/plugins/file-manager/list', { path: state.path }).then(result => renderFiles(result.entries || []))
+                .catch(error => toast(error.message || 'טעינת התיקייה נכשלה', true));
+        });
+        document.querySelectorAll('.fm-nav-button').forEach(button => {
+            button.addEventListener('click', () => load(button.dataset.path || state.homePath));
+        });
 
         $('fm-dialog-cancel').addEventListener('click', () => finishValueDialog(null));
         $('fm-dialog-confirm').addEventListener('click', () => finishValueDialog($('fm-dialog-input').value));
@@ -1156,6 +1227,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
         Promise.resolve()
             .then(loadPermissions)
+            .then(loadSecurityStatus)
             .then(() => load(state.homePath))
             .catch(error => {
                 toast(error.message || 'טעינת ההרשאות נכשלה', true);
