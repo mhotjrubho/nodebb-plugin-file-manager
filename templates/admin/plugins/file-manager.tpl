@@ -24,13 +24,13 @@
                 </div>
                 <span class="fm-ribbon-separator"></span>
                 <div class="fm-command-group">
-                    <button class="fm-command" id="fm-upload-files" type="button" title="העלאת קבצים"><i class="fa fa-cloud-arrow-up" aria-hidden="true"></i><span>העלאת קבצים</span></button>
+                    <button class="fm-command" id="fm-upload-files" type="button" title="העלאת קבצים"><i class="fa fa-cloud-upload-alt" aria-hidden="true"></i><span>העלאת קבצים</span></button>
                     <button class="fm-command" id="fm-upload-folder" type="button" title="העלאת תיקייה"><i class="fa fa-folder-open" aria-hidden="true"></i><span>העלאת תיקייה</span></button>
                 </div>
                 <span class="fm-ribbon-separator"></span>
                 <div class="fm-command-group">
-                    <button class="fm-command" id="fm-backups" type="button" title="גיבויים וסל מחזור"><i class="fa fa-clock-rotate-left" aria-hidden="true"></i><span>גיבויים וסל מחזור</span></button>
-                    <button class="fm-command" id="fm-refresh" type="button" title="רענון"><i class="fa fa-arrows-rotate" aria-hidden="true"></i><span>רענון</span></button>
+                    <button class="fm-command" id="fm-backups" type="button" title="גיבויים וסל מחזור"><i class="fa fa-history" aria-hidden="true"></i><span>גיבויים וסל מחזור</span></button>
+                    <button class="fm-command" id="fm-refresh" type="button" title="רענון"><i class="fa fa-sync-alt" aria-hidden="true"></i><span>רענון</span></button>
                 </div>
             </div>
             <div class="fm-toolbar-lower">
@@ -63,9 +63,9 @@
             <aside class="fm-navigation">
                 <div class="fm-nav-section">
                     <div class="fm-nav-heading"><i class="fa fa-star" aria-hidden="true"></i> גישה מהירה</div>
-                    <button class="fm-nav-button is-active" type="button" data-path=""><i class="fa fa-house" aria-hidden="true"></i><span>תיקיית NodeBB</span></button>
+                    <button class="fm-nav-button is-active" type="button" data-path=""><i class="fa fa-home" aria-hidden="true"></i><span>תיקיית NodeBB</span></button>
                     <button class="fm-nav-button" type="button" data-path="public"><i class="fa fa-globe" aria-hidden="true"></i><span>קבצים ציבוריים</span></button>
-                    <button class="fm-nav-button" type="button" data-path="uploads"><i class="fa fa-cloud-arrow-up" aria-hidden="true"></i><span>העלאות</span></button>
+                    <button class="fm-nav-button" type="button" data-path="public/uploads"><i class="fa fa-cloud-arrow-up" aria-hidden="true"></i><span>העלאות</span></button>
                 </div>
                 <div class="fm-nav-section" data-admin-only>
                     <div class="fm-nav-heading"><i class="fa fa-server" aria-hidden="true"></i> תיקיות מערכת</div>
@@ -74,7 +74,7 @@
                     <button class="fm-nav-button" type="button" data-path="node_modules"><i class="fa fa-cubes" aria-hidden="true"></i><span>node_modules</span></button>
                 </div>
                 <div class="fm-nav-footer">
-                    <i class="fa fa-shield-halved" aria-hidden="true"></i>
+                    <i class="fa fa-shield-alt" aria-hidden="true"></i>
                     <span>גישה לפי הרשאות אישיות</span>
                 </div>
             </aside>
@@ -87,7 +87,7 @@
                     </div>
                     <div class="fm-view-switch" aria-label="תצוגת קבצים">
                         <button id="fm-view-list" class="is-active" type="button" title="תצוגת פרטים" aria-label="תצוגת פרטים"><i class="fa fa-list" aria-hidden="true"></i></button>
-                        <button id="fm-view-grid" type="button" title="תצוגת סמלים" aria-label="תצוגת סמלים"><i class="fa fa-grip" aria-hidden="true"></i></button>
+                        <button id="fm-view-grid" type="button" title="תצוגת סמלים" aria-label="תצוגת סמלים"><i class="fa fa-th-large" aria-hidden="true"></i></button>
                     </div>
                 </div>
                 <div class="fm-list-heading">
@@ -148,7 +148,7 @@
                     <div id="fm-preview-content" class="fm-preview-content"></div>
                 </div>
                 <div class="fm-preview-actions">
-                    <button class="fm-btn fm-btn-primary" id="fm-preview-edit" type="button" hidden><i class="fa fa-arrow-up-right-from-square" aria-hidden="true"></i> פתח פריט</button>
+                    <button class="fm-btn fm-btn-primary" id="fm-preview-edit" type="button" hidden><i class="fa fa-external-link-alt" aria-hidden="true"></i> פתח פריט</button>
                 </div>
             </aside>
         </div>
@@ -222,7 +222,7 @@
             <span class="fm-modal-eyebrow">אימות אבטחה של מנהל הקבצים</span>
             <h2 id="fm-password-title">נדרש מפתח אישי</h2>
             <p id="fm-password-description">להמשך הפעולה, הזן את סיסמת מנהל הקבצים האישית שלך.</p>
-            <label class="fm-password-label" for="fm-password-input">סיסמת מנהל הקבצים</label>
+            <label class="fm-password-label" id="fm-password-label-text" for="fm-password-input">סיסמת מנהל הקבצים</label>
             <input id="fm-password-input" type="password" dir="ltr" autocomplete="current-password" placeholder="הקלד סיסמה">
             <div class="fm-modal-error" id="fm-password-error" hidden></div>
             <div class="fm-modal-actions">
