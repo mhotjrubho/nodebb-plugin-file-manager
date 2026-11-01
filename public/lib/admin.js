@@ -398,6 +398,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             state.editor.on('change', () => updateEditorStatus());
             state.editor.on('cursorActivity', () => updateEditorStatus());
             state.editorReady = true;
+            ['fm-editor-find', 'fm-editor-wrap', 'fm-editor-fullscreen'].forEach(id => { $(id).disabled = false; });
             updateRoleUI();
         })();
 
@@ -685,10 +686,17 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             $('fm-editor').value = fileResult ? fileResult.content : '';
             $('fm-editor').readOnly = !state.canEdit;
             $('fm-editor-language').textContent = 'עורך טקסט בסיסי (גיבוי)';
+            ['fm-editor-find', 'fm-editor-wrap', 'fm-editor-fullscreen'].forEach(id => { $(id).disabled = true; });
             if ($('fm-editor').dataset.fmFallbackBound !== 'true') {
                 $('fm-editor').addEventListener('input', updateEditorStatus);
                 $('fm-editor').addEventListener('keyup', updateEditorStatus);
                 $('fm-editor').addEventListener('click', updateEditorStatus);
+                $('fm-editor').addEventListener('keydown', event => {
+                    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+                        event.preventDefault();
+                        saveFile();
+                    }
+                });
                 $('fm-editor').dataset.fmFallbackBound = 'true';
             }
             updateEditorStatus();
