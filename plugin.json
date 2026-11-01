@@ -13,10 +13,8 @@
       "method": "addAdminNavigation"
     }
   ],
-  "modules": {
-    "admin/plugins/file-manager": "./public/lib/admin.js"
-  },
   "acpScripts": [
+    "public/lib/admin.js",
     "public/lib/acp.js"
   ],
   "acpScss": [
