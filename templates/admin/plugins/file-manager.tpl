@@ -16,6 +16,12 @@
     </header>
 
     <main class="fm-explorer-window">
+        <div class="fm-tab-strip" aria-label="כרטיסיית סייר הקבצים">
+            <div class="fm-tab-active" role="tab" aria-selected="true">
+                <i class="fa fa-folder-open" aria-hidden="true"></i>
+                <span id="fm-tab-title">תיקיית NodeBB</span>
+            </div>
+        </div>
         <section class="fm-ribbon">
             <div class="fm-ribbon-actions">
                 <div class="fm-command-group">
@@ -35,11 +41,12 @@
             </div>
             <div class="fm-toolbar-lower">
                 <div class="fm-address-bar">
-                    <button class="fm-address-up" id="fm-up" type="button" title="תיקייה קודמת" aria-label="תיקייה קודמת"><i class="fa fa-arrow-up" aria-hidden="true"></i></button>
+                    <button class="fm-address-nav" id="fm-history-back" type="button" title="חזרה לתיקייה הקודמת" aria-label="חזרה לתיקייה הקודמת" disabled><i class="fa fa-arrow-right" aria-hidden="true"></i></button>
+                    <button class="fm-address-nav" id="fm-history-forward" type="button" title="מעבר לתיקייה הבאה" aria-label="מעבר לתיקייה הבאה" disabled><i class="fa fa-arrow-left" aria-hidden="true"></i></button>
+                    <button class="fm-address-up" id="fm-up" type="button" title="תיקיית אב" aria-label="תיקיית אב"><i class="fa fa-arrow-up" aria-hidden="true"></i></button>
                     <span class="fm-address-icon"><i class="fa fa-folder" aria-hidden="true"></i></span>
                     <span class="fm-address-label">נתיב:</span>
                     <span id="fm-breadcrumb" class="fm-ltr" dir="ltr">/</span>
-                    <span class="fm-address-count" id="fm-item-count">— פריטים</span>
                 </div>
                 <div class="fm-search-box fm-explorer-search">
                     <i class="fa fa-search" aria-hidden="true"></i>
@@ -84,10 +91,6 @@
                     <div>
                         <strong>תוכן התיקייה</strong>
                         <span id="fm-current-path" class="fm-current-path fm-ltr" dir="ltr">/</span>
-                    </div>
-                    <div class="fm-view-switch" aria-label="תצוגת קבצים">
-                        <button id="fm-view-list" class="is-active" type="button" title="תצוגת פרטים" aria-label="תצוגת פרטים"><i class="fa fa-list" aria-hidden="true"></i></button>
-                        <button id="fm-view-grid" type="button" title="תצוגת סמלים" aria-label="תצוגת סמלים"><i class="fa fa-th-large" aria-hidden="true"></i></button>
                     </div>
                 </div>
                 <div class="fm-list-heading">
@@ -152,6 +155,21 @@
                 </div>
             </aside>
         </div>
+        <footer class="fm-statusbar">
+            <div class="fm-statusbar-location">
+                <i class="fa fa-folder-open" aria-hidden="true"></i>
+                <span id="fm-status-path" dir="ltr">/</span>
+            </div>
+            <div class="fm-statusbar-details">
+                <span id="fm-item-count">— פריטים</span>
+                <span class="fm-statusbar-divider"></span>
+                <span>מנהל הקבצים של NodeBB</span>
+            </div>
+            <div class="fm-statusbar-view">
+                <button id="fm-view-list" class="is-active" type="button" title="תצוגת פרטים" aria-label="תצוגת פרטים"><i class="fa fa-list" aria-hidden="true"></i></button>
+                <button id="fm-view-grid" type="button" title="תצוגת סמלים" aria-label="תצוגת סמלים"><i class="fa fa-th-large" aria-hidden="true"></i></button>
+            </div>
+        </footer>
     </main>
 
     <section class="fm-overlay-panel fm-backups-panel" id="fm-backups-panel" hidden>
