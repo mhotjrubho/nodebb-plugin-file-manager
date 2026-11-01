@@ -257,7 +257,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
                 return deny(res, 403, 'טרם הוגדרה לך סיסמת מנהל קבצים. הגדר אותה לפני הכניסה למנהל הקבצים.');
             }
 
-            const credentialVersion = record.updatedAt || record.hash;
+            const credentialVersion = record.salt + ':' + record.hash;
             const sessionAuth = req.session && req.session.fileManagerAuth;
 
             // A successful unlock grants a short-lived session. A password reset changes
@@ -305,6 +305,10 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
                 }
                 return deny(res, attempts.lockedUntil ? 429 : 401,
                     attempts.lockedUntil ? 'יותר מדי ניסיונות. הגישה ננעלה ל־15 דקות.' : 'סיסמת מנהל הקבצים שגויה');
+            }
+
+            if (!req.session) {
+                return deny(res, 500, 'לא נוצרה הפעלת משתמש תקינה בשרת. יש להתחבר מחדש.');
             }
 
             passwordFailures.delete(key);
