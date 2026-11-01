@@ -24,6 +24,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         selectedItem: null,
         viewMode: 'list',
         fmPasswordConfigured: false,
+        fmUnlockedUntil: 0,
         uploadController: null,
         uploadActive: false,
         previewRequestId: 0
@@ -141,6 +142,15 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
                 return await request('post', route, data || {}, { 'x-password-confirmation': password });
             } catch (error) {
                 const message = String(error && error.message || '');
+                if (/פג תוקף האימות|נדרש מפתח סיסמת מנהל הקבצים|יש להזין שוב את סיסמת מנהל הקבצים/i.test(message)) {
+                    const unlocked = await unlockFileManager(
+                        'האימות למנהל הקבצים פג. הזן שוב את המפתח האישי שלך.',
+                        true
+                    );
+                    if (!unlocked) return null;
+                    attempt -= 1;
+                    continue;
+                }
                 const rejected = /invalid password|invalid-password|password|סיסמ|אימות/i.test(message);
                 if (!rejected || attempt === 2) throw error;
                 toast('הסיסמה לא אושרה. נסה שוב.', true);
@@ -151,7 +161,8 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         return null;
     }
 
-    async function unlockFileManager(description) {
+    async function unlockFileManager(description, force) {
+        if (!force && state.fmUnlockedUntil > Date.now()) return true;
         if (!state.fmPasswordConfigured) {
             openVaultDialog(true);
             return false;
@@ -168,6 +179,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
                 await request('post', '/plugins/file-manager/unlock', {}, {
                     'x-file-manager-password': password
                 });
+                state.fmUnlockedUntil = Date.now() + (15 * 60 * 1000);
                 return true;
             } catch (error) {
                 const message = String(error && error.message || '');
@@ -186,6 +198,25 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         return false;
     }
 
+    async function secureFileGet(route, data, description) {
+        try {
+            return await request('get', route, data || {});
+        } catch (error) {
+            const message = String(error && error.message || '');
+            const status = Number(error && (error.status || error.statusCode));
+            const expired = status === 401 ||
+                /פג תוקף האימות|נדרש מפתח סיסמת מנהל הקבצים|יש להזין שוב את סיסמת מנהל הקבצים/i.test(message);
+            if (!expired) throw error;
+
+            const unlocked = await unlockFileManager(
+                description || 'האימות פג. הזן שוב את סיסמת מנהל הקבצים.',
+                true
+            );
+            if (!unlocked) return null;
+            return request('get', route, data || {});
+        }
+    }
+
     async function secureFilePost(route, data, description) {
         if (!state.fmPasswordConfigured) {
             toast('לפני שינוי קבצים יש להגדיר סיסמת מנהל קבצים אישית.', true);
@@ -202,7 +233,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
                 /פג תוקף האימות|נדרש אימות|סיסמת מנהל הקבצים שגויה|מפתח מנהל הקבצים/i.test(message);
             if (!needsUnlock) throw error;
 
-            const unlocked = await unlockFileManager(description);
+            const unlocked = await unlockFileManager(description, true);
             if (!unlocked) return null;
             return request('post', route, data || {});
         }
@@ -539,7 +570,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         list.appendChild(loading);
 
         try {
-            const result = await request('get', '/plugins/file-manager/list', { path: state.path });
+            const result = await secureFileGet('/plugins/file-manager/list', { path: state.path });
             renderFiles(result.entries || []);
         } catch (error) {
             list.replaceChildren();
@@ -602,7 +633,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         loading.append(fa('fa-circle-notch fa-spin'), document.createTextNode(' טוען תצוגה מקדימה…'));
         $('fm-preview-content').appendChild(loading);
         try {
-            const result = await request('get', '/plugins/file-manager/preview', { path: item.path });
+            const result = await secureFileGet('/plugins/file-manager/preview', { path: item.path });
             if (previewRequestId !== state.previewRequestId) return;
             $('fm-preview-content').replaceChildren();
             if (result.kind === 'image') {
@@ -714,7 +745,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
     async function openFile(folder) {
         let fileResult = null;
         try {
-            fileResult = await request('get', '/plugins/file-manager/read', { path: folder });
+            fileResult = await secureFileGet('/plugins/file-manager/read', { path: folder });
             state.editing = fileResult.path;
             state.original = fileResult.content;
             $('fm-editor-panel').hidden = false;
@@ -846,7 +877,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         const query = $('fm-search-input').value.trim();
         if (query.length < 2) return toast('יש להזין לפחות שני תווים לחיפוש', true);
         try {
-            const result = await request('get', '/plugins/file-manager/search', { q: query, path: state.path });
+            const result = await secureFileGet('/plugins/file-manager/search', { q: query, path: state.path });
             renderFiles((result.results || []).map(item => ({ ...item, name: String(item.path).split('/').pop() })));
             toast(result.truncated ? 'הוצגו תוצאות חלקיות. צמצם את החיפוש.' : 'נמצאו ' + result.results.length + ' תוצאות');
         } catch (error) { toast(error.message || 'החיפוש נכשל', true); }
@@ -862,8 +893,8 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
             return;
         }
 
-        let password = await askPassword('הזן את סיסמת מנהל הקבצים כדי לאשר את ההעלאה.', 'file-manager');
-        if (password === null) {
+        const unlocked = await unlockFileManager('כדי להעלות קבצים, הזן את סיסמת מנהל הקבצים.');
+        if (!unlocked) {
             input.value = '';
             return;
         }
@@ -888,16 +919,30 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
                 form.append('relativePaths', JSON.stringify(paths));
                 form.append('path', state.path);
 
-                const response = await fetch((config.relative_path || '') + '/api/v3/plugins/file-manager/upload', {
+                const uploadUrl = (config.relative_path || '') + '/api/v3/plugins/file-manager/upload';
+                let response = await fetch(uploadUrl, {
                     method: 'POST',
                     credentials: 'same-origin',
-                    headers: {
-                        'x-csrf-token': config.csrf_token,
-                        'x-file-manager-password': password
-                    },
+                    headers: { 'x-csrf-token': config.csrf_token },
                     body: form,
                     signal: state.uploadController.signal
                 });
+
+                if (response.status === 401) {
+                    const refreshed = await unlockFileManager(
+                        'האימות פג בזמן ההעלאה. הזן שוב את סיסמת מנהל הקבצים.',
+                        true
+                    );
+                    if (!refreshed) throw new Error('ההעלאה בוטלה: לא בוצע אימות מחדש.');
+                    response = await fetch(uploadUrl, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'x-csrf-token': config.csrf_token },
+                        body: form,
+                        signal: state.uploadController.signal
+                    });
+                }
+
                 const raw = await response.json().catch(() => ({}));
                 const result = raw && raw.response ? raw.response : raw;
                 if (!response.ok) {
@@ -919,7 +964,6 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
                 toast('ההעלאה נעצרה לאחר ' + count + ' קבצים: ' + (error.message || 'שגיאה'), true);
             }
         } finally {
-            password = '';
             state.uploadActive = false;
             state.uploadController = null;
             $('fm-upload-progress-wrap').hidden = true;
@@ -953,7 +997,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         list.appendChild(loading);
 
         try {
-            const result = await request('get', '/plugins/file-manager/backups', {});
+            const result = await secureFileGet('/plugins/file-manager/backups', {});
             renderBackups(result.backups || []);
         } catch (error) { toast(error.message || 'טעינת הגיבויים נכשלה', true); }
     }
@@ -1024,7 +1068,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         $('fm-access-panel').hidden = false;
         $('fm-user-search-results').replaceChildren();
         try {
-            const result = await request('get', '/plugins/file-manager/access', {});
+            const result = await secureFileGet('/plugins/file-manager/access', {});
             state.allowedUsers = result.users || [];
             renderAllowedUsers();
         } catch (error) { toast(error.message || 'טעינת רשימת ההרשאות נכשלה', true); }
@@ -1040,7 +1084,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         loading.textContent = 'מחפש משתמשים בפורום…';
         results.appendChild(loading);
         try {
-            const response = await request('get', '/plugins/file-manager/users/search', { q: query });
+            const response = await secureFileGet('/plugins/file-manager/users/search', { q: query });
             state.searchResults = response.users || [];
             renderUserSearchResults();
         } catch (error) {
@@ -1340,14 +1384,14 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
             state.viewMode = 'list';
             $('fm-view-list').classList.add('is-active');
             $('fm-view-grid').classList.remove('is-active');
-            request('get', '/plugins/file-manager/list', { path: state.path }).then(result => renderFiles(result.entries || []))
+            secureFileGet('/plugins/file-manager/list', { path: state.path }).then(result => renderFiles(result.entries || []))
                 .catch(error => toast(error.message || 'טעינת התיקייה נכשלה', true));
         });
         $('fm-view-grid').addEventListener('click', () => {
             state.viewMode = 'grid';
             $('fm-view-grid').classList.add('is-active');
             $('fm-view-list').classList.remove('is-active');
-            request('get', '/plugins/file-manager/list', { path: state.path }).then(result => renderFiles(result.entries || []))
+            secureFileGet('/plugins/file-manager/list', { path: state.path }).then(result => renderFiles(result.entries || []))
                 .catch(error => toast(error.message || 'טעינת התיקייה נכשלה', true));
         });
         document.querySelectorAll('.fm-nav-button').forEach(button => {
