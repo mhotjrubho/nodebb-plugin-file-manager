@@ -25,7 +25,8 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         viewMode: 'list',
         fmPasswordConfigured: false,
         uploadController: null,
-        uploadActive: false
+        uploadActive: false,
+        previewRequestId: 0
     };
 
     const $ = id => document.getElementById(id);
@@ -200,7 +201,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             return;
         }
         try {
-            const result = await securePost('/plugins/file-manager/credentials', { password, confirmation },
+            const result = await securePost('/plugins/file-manager/credentials', { newPassword: password, confirmation },
                 'כדי להגדיר או להחליף את המפתח האישי, הזן תחילה את סיסמת החשבון שלך ב־NodeBB.');
             if (!result) return;
             $('fm-vault-dialog').hidden = true;
@@ -249,6 +250,9 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         $('fm-role-label').textContent = roleText;
         $('fm-access-open').hidden = !state.canManageAccess;
         $('fm-backups').hidden = !state.canEdit;
+        document.querySelectorAll('[data-admin-only]').forEach(node => { node.hidden = state.role === 'viewer'; });
+        const uploadsButton = document.querySelector('.fm-nav-button[data-path="uploads"]');
+        if (uploadsButton) uploadsButton.hidden = state.role === 'viewer';
 
         [
             'fm-new-folder',
@@ -418,11 +422,24 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     }
 
     function updateEditorStatus() {
-        if (!state.editor) return;
-        const cursor = state.editor.getCursor();
-        const lines = state.editor.lineCount();
-        $('fm-editor-lines').textContent = lines + ' שורות · שורה ' + (cursor.line + 1) + ', עמודה ' + (cursor.ch + 1);
-        state.dirty = state.editor.getValue() !== state.original;
+        if (!state.editor && !$('fm-editor')) return;
+        const content = state.editor ? state.editor.getValue() : $('fm-editor').value;
+        let line = 1;
+        let column = 1;
+        let lines = 1;
+        if (state.editor) {
+            const cursor = state.editor.getCursor();
+            lines = state.editor.lineCount();
+            line = cursor.line + 1;
+            column = cursor.ch + 1;
+        } else {
+            const before = content.slice(0, $('fm-editor').selectionStart || 0);
+            line = before.split('\n').length;
+            column = before.length - before.lastIndexOf('\n');
+            lines = content.split('\n').length;
+        }
+        $('fm-editor-lines').textContent = lines + ' שורות · שורה ' + line + ', עמודה ' + column;
+        state.dirty = content !== state.original;
         $('fm-editor-dirty').textContent = state.dirty ? 'יש שינויים שטרם נשמרו' : 'אין שינויים שלא נשמרו';
         $('fm-editor-dirty').classList.toggle('fm-editor-dirty', state.dirty);
         $('fm-editor-status').textContent = state.dirty ? 'נערך · טרם נשמר' : 'הקובץ מסונכרן';
@@ -493,6 +510,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     }
 
     async function selectItem(item) {
+        const previewRequestId = ++state.previewRequestId;
         state.selectedItem = item;
         document.querySelectorAll('.fm-file-row.is-selected').forEach(row => row.classList.remove('is-selected'));
         const selectedPath = String(item.path || '');
@@ -528,6 +546,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         $('fm-preview-content').appendChild(loading);
         try {
             const result = await request('get', '/plugins/file-manager/preview', { path: item.path });
+            if (previewRequestId !== state.previewRequestId) return;
             $('fm-preview-content').replaceChildren();
             if (result.kind === 'image') {
                 $('fm-preview-image').src = 'data:' + result.mime + ';base64,' + result.data;
@@ -549,6 +568,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 $('fm-preview-empty').textContent = 'אין תצוגה מקדימה לסוג הקובץ הזה. אפשר לפתוח אותו בעורך אם הוא קובץ טקסט נתמך.';
             }
         } catch (error) {
+            if (previewRequestId !== state.previewRequestId) return;
             $('fm-preview-content').replaceChildren();
             $('fm-preview-empty').hidden = false;
             $('fm-preview-empty').textContent = error.message || 'לא ניתן להציג תצוגה מקדימה.';
@@ -658,7 +678,11 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             $('fm-editor-panel').hidden = false;
             $('fm-workspace-grid').classList.add('has-editor');
             $('fm-editor').value = fileResult ? fileResult.content : '';
-            toast('טעינת עורך הקוד נכשלה: ' + (error.message || 'שגיאה'), true);
+            $('fm-editor').readOnly = !state.canEdit;
+            $('fm-editor-language').textContent = 'עורך טקסט בסיסי (גיבוי)';
+            $('fm-editor').addEventListener('input', updateEditorStatus);
+            updateEditorStatus();
+            toast('טעינת עורך הקוד נכשלה. נפתח עורך גיבוי: ' + (error.message || 'שגיאה'), true);
         }
     }
 
@@ -672,7 +696,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             const result = await secureFilePost('/plugins/file-manager/write', {
                 path: state.editing,
                 content
-            }, 'כדי לשמור שינויים בקובץ, הזן את סיסמת חשבון NodeBB שלך.');
+            }, 'כדי לשמור שינויים בקובץ, הזן את סיסמת מנהל הקבצים האישית שלך.');
             if (!result) return;
             state.original = content;
             if (state.editor) state.editor.clearHistory();
@@ -701,7 +725,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         if (!value || !value.trim()) return;
         const folder = (state.path ? state.path + '/' : '') + value.trim();
         try {
-            const result = await securePost('/plugins/file-manager/write', { path: folder, content: '' }, 'אימות סיסמה נדרש לפני יצירת קובץ חדש.');
+            const result = await secureFilePost('/plugins/file-manager/write', { path: folder, content: '' }, 'אימות סיסמה נדרש לפני יצירת קובץ חדש.');
             if (!result) return;
             toast('הקובץ נוצר בהצלחה');
             await load(state.path);
@@ -754,7 +778,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         if (query.length < 2) return toast('יש להזין לפחות שני תווים לחיפוש', true);
         try {
             const result = await request('get', '/plugins/file-manager/search', { q: query, path: state.path });
-            renderFiles((result.results || []).map(item => ({ ...item, name: item.path })));
+            renderFiles((result.results || []).map(item => ({ ...item, name: String(item.path).split('/').pop() })));
             toast(result.truncated ? 'הוצגו תוצאות חלקיות. צמצם את החיפוש.' : 'נמצאו ' + result.results.length + ' תוצאות');
         } catch (error) { toast(error.message || 'החיפוש נכשל', true); }
     }
@@ -778,7 +802,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         let count = 0;
         state.uploadController = new AbortController();
         state.uploadActive = true;
-        $('fm-upload-progress').hidden = false;
+        $('fm-upload-progress-wrap').hidden = false;
         $('fm-upload-progress').value = 0;
         $('fm-upload-progress-label').textContent = 'מתחיל העלאה של ' + files.length + ' קבצים…';
         $('fm-upload-cancel').disabled = false;
@@ -829,7 +853,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             password = '';
             state.uploadActive = false;
             state.uploadController = null;
-            $('fm-upload-progress').hidden = true;
+            $('fm-upload-progress-wrap').hidden = true;
             $('fm-upload-cancel').disabled = true;
             input.value = '';
             await load(state.path);
@@ -1100,11 +1124,16 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     }
 
     async function discardEditorChanges() {
-        if (!state.editor || !state.dirty) return;
+        const currentContent = state.editor ? state.editor.getValue() : $('fm-editor').value;
+        if (currentContent === state.original) return;
         const approved = await askConfirmation('ביטול שינויים', 'להחזיר את תוכן העורך לגרסה האחרונה שנשמרה?', 'ביטול שינויים');
         if (!approved) return;
-        state.editor.setValue(state.original);
-        state.editor.clearHistory();
+        if (state.editor) {
+            state.editor.setValue(state.original);
+            state.editor.clearHistory();
+        } else {
+            $('fm-editor').value = state.original;
+        }
         updateEditorStatus();
     }
 
