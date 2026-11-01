@@ -10,7 +10,7 @@
         <div class="fm-topbar-actions">
             <span id="fm-vault-status" class="fm-vault-status is-warning">בודק מצב אבטחה…</span>
             <button class="fm-btn fm-btn-light" id="fm-vault-open" type="button"><i class="fa fa-key" aria-hidden="true"></i> הגדרת סיסמה</button>
-            <button class="fm-btn fm-btn-light" id="fm-access-open" type="button" hidden><i class="fa fa-user-shield" aria-hidden="true"></i> משתמשים מורשים</button>
+            <button class="fm-btn fm-btn-light" id="fm-access-open" type="button" hidden><i class="fa fa-users" aria-hidden="true"></i> משתמשים מורשים</button>
             <span class="fm-role-label" id="fm-role-label">בודק הרשאות…</span>
         </div>
     </header>
@@ -20,7 +20,7 @@
             <div class="fm-ribbon-actions">
                 <div class="fm-command-group">
                     <button class="fm-command" id="fm-new-folder" type="button" title="תיקייה חדשה"><i class="fa fa-folder-plus" aria-hidden="true"></i><span>תיקייה חדשה</span></button>
-                    <button class="fm-command" id="fm-new-file" type="button" title="קובץ חדש"><i class="fa fa-file-circle-plus" aria-hidden="true"></i><span>קובץ חדש</span></button>
+                    <button class="fm-command" id="fm-new-file" type="button" title="קובץ חדש"><i class="fa fa-file-alt" aria-hidden="true"></i><span>קובץ חדש</span></button>
                 </div>
                 <span class="fm-ribbon-separator"></span>
                 <div class="fm-command-group">
@@ -65,7 +65,7 @@
                     <div class="fm-nav-heading"><i class="fa fa-star" aria-hidden="true"></i> גישה מהירה</div>
                     <button class="fm-nav-button is-active" type="button" data-path=""><i class="fa fa-home" aria-hidden="true"></i><span>תיקיית NodeBB</span></button>
                     <button class="fm-nav-button" type="button" data-path="public"><i class="fa fa-globe" aria-hidden="true"></i><span>קבצים ציבוריים</span></button>
-                    <button class="fm-nav-button" type="button" data-path="public/uploads"><i class="fa fa-cloud-arrow-up" aria-hidden="true"></i><span>העלאות</span></button>
+                    <button class="fm-nav-button" type="button" data-path="public/uploads"><i class="fa fa-cloud-upload-alt" aria-hidden="true"></i><span>העלאות</span></button>
                 </div>
                 <div class="fm-nav-section" data-admin-only>
                     <div class="fm-nav-heading"><i class="fa fa-server" aria-hidden="true"></i> תיקיות מערכת</div>
@@ -167,10 +167,10 @@
             <div><span class="fm-overlay-kicker">הרשאות ואבטחה</span><h2>משתמשים מורשים</h2><p>הוסף משתמשי פורום, קבע הרשאות ואפס מפתחות אישיים בעת הצורך.</p></div>
             <button class="fm-icon-close" id="fm-access-close" type="button" aria-label="סגירה"><i class="fa fa-times" aria-hidden="true"></i></button>
         </div>
-        <div class="fm-access-notice"><i class="fa fa-shield-halved" aria-hidden="true"></i><span>לכל משתמש יש מפתח אישי נפרד למנהל הקבצים. המפתח אינו זהה לסיסמת NodeBB. מנהלים יכולים לאפס מפתח של משתמש, אך אינם יכולים לראות את הסיסמה שלו.</span></div>
+        <div class="fm-access-notice"><i class="fa fa-shield-alt" aria-hidden="true"></i><span>לכל משתמש יש מפתח אישי נפרד למנהל הקבצים. המפתח אינו זהה לסיסמת NodeBB. מנהלים יכולים לאפס מפתח של משתמש, אך אינם יכולים לראות את הסיסמה שלו.</span></div>
         <div class="fm-user-search-row">
             <div class="fm-search-box">
-                <i class="fa fa-user-search" aria-hidden="true"></i>
+                <i class="fa fa-search" aria-hidden="true"></i>
                 <input id="fm-user-search" type="search" placeholder="חיפוש משתמש לפי שם משתמש..." autocomplete="off">
             </div>
             <button class="fm-btn fm-btn-primary" id="fm-user-search-button" type="button"><i class="fa fa-search" aria-hidden="true"></i> חיפוש</button>
@@ -197,7 +197,7 @@
             <div class="fm-modal-error" id="fm-vault-error" hidden></div>
             <div class="fm-modal-actions">
                 <button class="fm-btn fm-btn-light" id="fm-vault-cancel" type="button">ביטול</button>
-                <button class="fm-btn fm-btn-primary" id="fm-vault-save" type="button"><i class="fa fa-shield-halved" aria-hidden="true"></i> שמירת מפתח</button>
+                <button class="fm-btn fm-btn-primary" id="fm-vault-save" type="button"><i class="fa fa-shield-alt" aria-hidden="true"></i> שמירת מפתח</button>
             </div>
             <small class="fm-password-footnote">לשמירה תידרש גם סיסמת NodeBB שלך. אין אפשרות לשחזר את המפתח הישן, רק להחליף אותו.</small>
         </div>
@@ -227,7 +227,7 @@
             <div class="fm-modal-error" id="fm-password-error" hidden></div>
             <div class="fm-modal-actions">
                 <button class="fm-btn fm-btn-light" id="fm-password-cancel" type="button">ביטול</button>
-                <button class="fm-btn fm-btn-primary" id="fm-password-confirm" type="button"><i class="fa fa-shield-halved" aria-hidden="true"></i> אימות וביצוע</button>
+                <button class="fm-btn fm-btn-primary" id="fm-password-confirm" type="button"><i class="fa fa-shield-alt" aria-hidden="true"></i> אימות וביצוע</button>
             </div>
             <small class="fm-password-footnote">המפתח נבדק בשרת ואינו נשמר בדפדפן.</small>
         </div>
