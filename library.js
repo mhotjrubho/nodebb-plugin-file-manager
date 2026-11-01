@@ -105,7 +105,7 @@ async function getBootstrapSecret() {
     if (!stat.isFile() || (stat.mode & 0o077) !== 0) {
         throw new Error('קובץ מפתח האתחול חייב להיות קובץ רגיל בהרשאות 0600');
     }
-    const secret = (await fs.readFile(BOOTSTRAP_SECRET_FILE, 'utf8')).replace(/[\\r\\n]+$/, '');
+    const secret = (await fs.readFile(BOOTSTRAP_SECRET_FILE, 'utf8')).replace(/[\r\n]+$/, '');
     if (Buffer.byteLength(secret, 'utf8') < 32 || Buffer.byteLength(secret, 'utf8') > 256) {
         throw new Error('מפתח האתחול בשרת חייב להכיל בין 32 ל־256 בתים');
     }
