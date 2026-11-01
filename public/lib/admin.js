@@ -1288,7 +1288,8 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         }
 
         const unlocked = await unlockFileManager(
-            'כדי לפתוח את מנהל הקבצים ולצפות בתיקיות, הזן את המפתח האישי שלך.'
+            'כדי לפתוח את מנהל הקבצים ולצפות בתיקיות, הזן את המפתח האישי שלך.',
+            true
         );
         if (unlocked) await load(state.homePath);
     }
