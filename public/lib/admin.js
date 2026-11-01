@@ -251,8 +251,8 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         $('fm-access-open').hidden = !state.canManageAccess;
         $('fm-backups').hidden = !state.canEdit;
         document.querySelectorAll('[data-admin-only]').forEach(node => { node.hidden = state.role === 'viewer'; });
-        const uploadsButton = document.querySelector('.fm-nav-button[data-path="uploads"]');
-        if (uploadsButton) uploadsButton.hidden = state.role === 'viewer';
+        const rootQuickButton = document.querySelector('.fm-nav-button[data-path=""]');
+        if (rootQuickButton) rootQuickButton.hidden = state.role === 'viewer';
 
         [
             'fm-new-folder',
