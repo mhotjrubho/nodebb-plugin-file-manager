@@ -271,11 +271,11 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
                     now - sessionAuth.authenticatedAt < FM_SESSION_TTL_MS;
 
                 if (sessionValid) return next();
-                return deny(res, 401, 'פג תוקף האימות. יש להזין שוב את סיסמת מנהל הקבצים.');
+                return deny(res, 403, 'פג תוקף האימות. יש להזין שוב את סיסמת מנהל הקבצים.');
             }
 
             if (typeof supplied !== 'string' || Buffer.byteLength(supplied, 'utf8') > FM_PASSWORD_MAX_LENGTH) {
-                return deny(res, 401, 'נדרש מפתח סיסמת מנהל הקבצים תקין');
+                return deny(res, 403, 'נדרש מפתח סיסמת מנהל הקבצים תקין');
             }
 
             const key = uid + ':' + String(req.ip || 'unknown');
