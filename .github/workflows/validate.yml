@@ -116,7 +116,7 @@ jobs:
             [page.includes('fm-bootstrap-dialog') && page.includes('fm-bootstrap-key'), 'first-time server bootstrap dialog'],
             [client.includes('startFileManager') && client.includes('submitBootstrapKey'), 'bootstrap UI startup and submission handlers'],
             [styles.includes('max-width: none') && styles.includes('direction: ltr') && styles.includes('grid-template-columns: 224px minmax(420px, 1fr) 320px'), 'full-width Explorer with fixed LTR pane placement'],
-            [styles.includes('font-size: 13px') && !/font-size:\\s*(?:[1-9]|1[0-2])px/.test(styles), 'minimum readable interface typography'],
+            [styles.includes('font-size: 13px') && !['font-size: 8px', 'font-size: 9px', 'font-size: 10px', 'font-size: 11px', 'font-size: 12px'].some(size => styles.includes(size)), 'minimum readable interface typography'],
             [page.includes('fm-password-label-text') && client.includes("$('fm-password-label-text').textContent"), 'password dialog distinguishes account and vault keys'],
             [client.includes('autoCloseTags: true') && client.includes("'addon/edit/closetag.js'"), 'automatic HTML tag closing support'],
             [styles.includes('.fm-search-box .fm-search-submit') && !styles.includes('.fm-search-submit { display: none'), 'visible Explorer search action'],
