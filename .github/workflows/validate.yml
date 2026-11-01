@@ -57,6 +57,7 @@ jobs:
             'addon/edit/closebrackets.js',
             'addon/edit/matchbrackets.js',
             'addon/edit/matchtags.js',
+            'addon/edit/closetag.js',
             'addon/selection/active-line.js',
             'addon/display/fullscreen.js',
             'addon/fold/foldcode.js',
@@ -65,7 +66,9 @@ jobs:
             'addon/fold/xml-fold.js',
             'addon/search/searchcursor.js',
             'addon/dialog/dialog.js',
-            'addon/search/search.js'
+            'addon/search/search.js',
+            'addon/comment/comment.js',
+            'addon/comment/continuecomment.js'
           ];
           const root = path.resolve(path.dirname(require.resolve('codemirror')), '..');
           for (const file of files) {
@@ -85,7 +88,7 @@ jobs:
 
           const uploadStart = library.indexOf("router.post(\n        '/api/v3/plugins/file-manager/upload'");
           const editorGuard = library.indexOf('editorAccess', uploadStart);
-          const passwordGuard = library.indexOf('requireCurrentPassword', uploadStart);
+          const passwordGuard = library.indexOf('requireFileManagerPassword', uploadStart);
           const multipart = library.indexOf('upload.any()', uploadStart);
 
           const checks = [
@@ -94,6 +97,24 @@ jobs:
             [extra.includes('MAX_TOTAL') && extra.includes('5000'), 'upload and archive limits'],
             [extra.includes('async function purge(id)'), 'explicit permanent deletion'],
             [library.includes('middleware.requirePasswordAuth'), 'NodeBB native password verification'],
+            [library.includes('crypto.scrypt') && library.includes('timingSafeEqual'), 'dedicated password hash and constant-time verification'],
+            [library.includes('FM_PASSWORD_MIN_LENGTH = 12') && library.includes('FM_PASSWORD_MAX_ATTEMPTS = 5'), 'minimum password length and login throttling'],
+            [library.includes('/credentials/status') && library.includes('/credentials/reset'), 'per-user password setup and admin reset'],
+            [manager.includes('async function preview') && manager.includes('PREVIEW_IMAGES'), 'safe image and text preview'],
+            [client.includes('require.config') && client.includes("'fm-vendor'"), 'CodeMirror AMD path mapping'],
+            [client.includes('new AbortController()') && client.includes("state.uploadController.abort()"), 'cancellable upload requests'],
+            [client.includes("$('fm-upload-progress-wrap').hidden = false"), 'visible upload progress wrapper'],
+            [client.includes('secureFilePost') && client.includes('x-file-manager-password'), 'dedicated file manager password for file mutations'],
+            [client.includes("newPassword: password") && library.includes('req.body && req.body.newPassword'), 'vault setup does not shadow NodeBB reauthentication password'],
+            [page.includes('fm-preview-image') && page.includes('fm-preview-panel'), 'image preview UI'],
+            [page.includes('fm-vault-dialog') && page.includes('fm-upload-cancel'), 'vault and upload cancel UI'],
+            [page.includes('fm-password-label-text') && client.includes("$('fm-password-label-text').textContent"), 'password dialog distinguishes account and vault keys'],
+            [client.includes('autoCloseTags: true') && client.includes("'addon/edit/closetag.js'"), 'automatic HTML tag closing support'],
+            [styles.includes('.fm-search-box .fm-search-submit') && !styles.includes('.fm-search-submit { display: none'), 'visible Explorer search action'],
+            [client.includes("$('fm-upload-progress-wrap').hidden = true"), 'upload progress panel closes after completion or cancellation'],
+            [client.includes("$('fm-editor').addEventListener('input', updateEditorStatus)"), 'fallback editor updates save status'],
+            [styles.includes('max-width: 1240px') && styles.includes('grid-template-columns: 184px minmax(390px, 1fr) 276px'), 'compact Explorer layout'],
+            [styles.includes('.fm-overlay-panel') && styles.includes('position: fixed'), 'floating backups and user management panels'],
             [library.includes('settings.allowedUsers') || library.includes('allowedUsers'), 'stored access list'],
             [library.includes("requestedPath === 'public' || requestedPath.startsWith('public/')"), 'viewer scope limited to public directory'],
             [uploadStart >= 0 && editorGuard > uploadStart && passwordGuard > editorGuard && multipart > passwordGuard, 'role and password checked before multipart upload'],

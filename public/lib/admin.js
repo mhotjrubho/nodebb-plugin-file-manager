@@ -20,7 +20,13 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         confirmResolve: null,
         toastTimer: null,
         wrapped: false,
-        fullScreen: false
+        fullScreen: false,
+        selectedItem: null,
+        viewMode: 'list',
+        fmPasswordConfigured: false,
+        uploadController: null,
+        uploadActive: false,
+        previewRequestId: 0
     };
 
     const $ = id => document.getElementById(id);
@@ -58,7 +64,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         node.className = 'fm-action-btn' + (danger ? ' is-danger' : '');
         if (iconName) node.appendChild(fa(iconName));
         node.appendChild(document.createTextNode(text));
-        node.addEventListener('click', handler);
+        node.addEventListener('click', event => { event.stopPropagation(); handler(event); });
         return node;
     }
 
@@ -85,11 +91,14 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         if (resolve) resolve(value);
     }
 
-    function askPassword(description) {
+    function askPassword(description, passwordKind) {
         if (state.passwordResolve) state.passwordResolve(null);
         return new Promise(resolve => {
             state.passwordResolve = resolve;
-            $('fm-password-description').textContent = description || 'להמשך הפעולה, הזן את סיסמת חשבון הפורום שלך.';
+            const kind = passwordKind === 'nodebb' ? 'nodebb' : 'file-manager';
+            $('fm-password-title').textContent = kind === 'nodebb' ? 'אימות סיסמת NodeBB' : 'נדרש מפתח אישי';
+            $('fm-password-label-text').textContent = kind === 'nodebb' ? 'סיסמת חשבון NodeBB' : 'סיסמת מנהל הקבצים';
+            $('fm-password-description').textContent = description || (kind === 'nodebb' ? 'הזן את סיסמת חשבון NodeBB שלך.' : 'הזן את סיסמת מנהל הקבצים האישית שלך.');
             $('fm-password-input').value = '';
             $('fm-password-error').hidden = true;
             $('fm-password-confirm').disabled = false;
@@ -126,7 +135,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
     async function securePost(route, data, description) {
         for (let attempt = 0; attempt < 3; attempt += 1) {
-            let password = await askPassword(description);
+            let password = await askPassword(description, 'nodebb');
             if (password === null) return null;
             try {
                 return await request('post', route, data || {}, { 'x-password-confirmation': password });
@@ -140,6 +149,86 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             }
         }
         return null;
+    }
+
+    async function secureFilePost(route, data, description) {
+        if (!state.fmPasswordConfigured) {
+            toast('לפני שינוי קבצים יש להגדיר סיסמת מנהל קבצים אישית.', true);
+            openVaultDialog();
+            return null;
+        }
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            let password = await askPassword(description || 'הזן את סיסמת מנהל הקבצים האישית שלך.', 'file-manager');
+            if (password === null) return null;
+            try {
+                return await request('post', route, data || {}, { 'x-file-manager-password': password });
+            } catch (error) {
+                const message = String(error && error.message || '');
+                const rejected = /file manager password|password|סיסמ|מפתח מנהל הקבצים/i.test(message);
+                if (!rejected || attempt === 2) throw error;
+                toast('סיסמת מנהל הקבצים לא אושרה. נסה שוב.', true);
+            } finally {
+                password = '';
+            }
+        }
+        return null;
+    }
+
+    async function loadSecurityStatus() {
+        const result = await request('get', '/plugins/file-manager/credentials/status', {});
+        state.fmPasswordConfigured = Boolean(result.configured);
+        $('fm-vault-status').textContent = state.fmPasswordConfigured ? 'מפתח אישי מוגדר' : 'נדרש להגדיר מפתח אישי';
+        $('fm-vault-status').classList.toggle('is-warning', !state.fmPasswordConfigured);
+        $('fm-vault-open').textContent = state.fmPasswordConfigured ? 'שינוי סיסמה' : 'הגדרת סיסמה';
+    }
+
+    function openVaultDialog() {
+        $('fm-vault-password').value = '';
+        $('fm-vault-confirm').value = '';
+        $('fm-vault-error').hidden = true;
+        $('fm-vault-dialog').hidden = false;
+        $('fm-vault-password').focus();
+    }
+
+    async function saveVaultPassword() {
+        const password = $('fm-vault-password').value;
+        const confirmation = $('fm-vault-confirm').value;
+        if ([...password].length < 12) {
+            $('fm-vault-error').textContent = 'יש לבחור סיסמה ארוכה של 12 תווים לפחות. עדיף משפט סיסמה ייחודי.';
+            $('fm-vault-error').hidden = false;
+            return;
+        }
+        if (password !== confirmation) {
+            $('fm-vault-error').textContent = 'שתי הסיסמאות אינן זהות.';
+            $('fm-vault-error').hidden = false;
+            return;
+        }
+        try {
+            const result = await securePost('/plugins/file-manager/credentials', { newPassword: password, confirmation },
+                'כדי להגדיר או להחליף את המפתח האישי, הזן תחילה את סיסמת החשבון שלך ב־NodeBB.');
+            if (!result) return;
+            $('fm-vault-dialog').hidden = true;
+            await loadSecurityStatus();
+            toast('סיסמת מנהל הקבצים האישית נשמרה בהצלחה');
+        } catch (error) {
+            $('fm-vault-error').textContent = error.message || 'שמירת הסיסמה נכשלה';
+            $('fm-vault-error').hidden = false;
+        } finally {
+            $('fm-vault-password').value = '';
+            $('fm-vault-confirm').value = '';
+        }
+    }
+
+    async function resetUserPassword(item) {
+        const approved = await askConfirmation('איפוס מפתח משתמש', 'לאפס את סיסמת מנהל הקבצים של ' + item.username + '? המשתמש יידרש להגדיר מפתח אישי חדש.', 'איפוס מפתח');
+        if (!approved) return;
+        try {
+            const result = await securePost('/plugins/file-manager/credentials/reset', { uid: item.uid },
+                'איפוס מפתח משתמש הוא פעולה רגישה. הזן את סיסמת NodeBB של מנהל המערכת.');
+            if (!result) return;
+            toast('המפתח אופס. המשתמש יוכל להגדיר מפתח חדש.');
+            await openAccessPanel();
+        } catch (error) { toast(error.message || 'איפוס המפתח נכשל', true); }
     }
 
     function formatSize(bytes) {
@@ -164,6 +253,9 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         $('fm-role-label').textContent = roleText;
         $('fm-access-open').hidden = !state.canManageAccess;
         $('fm-backups').hidden = !state.canEdit;
+        document.querySelectorAll('[data-admin-only]').forEach(node => { node.hidden = state.role === 'viewer'; });
+        const rootQuickButton = document.querySelector('.fm-nav-button[data-path=""]');
+        if (rootQuickButton) rootQuickButton.hidden = state.role === 'viewer';
 
         [
             'fm-new-folder',
@@ -205,10 +297,20 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         document.head.appendChild(link);
     }
 
+    let codeMirrorPathConfigured = false;
+
     function loadAmdModule(relative) {
-        const url = loadStaticUrl(relative.replace(/\.js$/, ''));
+        const moduleId = 'fm-vendor/' + relative.replace(/\.js$/, '');
+        if (!codeMirrorPathConfigured) {
+            const vendorRoot = loadStaticUrl('').replace(/\/$/, '');
+            require.config({ paths: { 'fm-vendor': vendorRoot } });
+            codeMirrorPathConfigured = true;
+        }
         return new Promise((resolve, reject) => {
-            require([url], module => resolve(module), error => reject(error));
+            require([moduleId], module => resolve(module), error => {
+                const detail = error && (error.requireModules || error.message);
+                reject(new Error('טעינת רכיב העורך נכשלה (' + relative + '): ' + String(detail || 'שגיאת AMD')));
+            });
         });
     }
 
@@ -247,6 +349,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 'addon/edit/closebrackets.js',
                 'addon/edit/matchbrackets.js',
                 'addon/edit/matchtags.js',
+                'addon/edit/closetag.js',
                 'addon/selection/active-line.js',
                 'addon/display/fullscreen.js',
                 'addon/fold/foldcode.js',
@@ -255,7 +358,9 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 'addon/fold/xml-fold.js',
                 'addon/search/searchcursor.js',
                 'addon/dialog/dialog.js',
-                'addon/search/search.js'
+                'addon/search/search.js',
+                'addon/comment/comment.js',
+                'addon/comment/continuecomment.js'
             ];
             for (const modulePath of modules) {
                 await loadAmdModule(modulePath);
@@ -273,6 +378,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 autoCloseBrackets: true,
                 styleActiveLine: true,
                 matchTags: { bothTags: true },
+                autoCloseTags: true,
                 foldGutter: true,
                 gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
                 extraKeys: {
@@ -292,6 +398,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             state.editor.on('change', () => updateEditorStatus());
             state.editor.on('cursorActivity', () => updateEditorStatus());
             state.editorReady = true;
+            ['fm-editor-find', 'fm-editor-wrap', 'fm-editor-fullscreen'].forEach(id => { $(id).disabled = false; });
             updateRoleUI();
         })();
 
@@ -321,11 +428,24 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     }
 
     function updateEditorStatus() {
-        if (!state.editor) return;
-        const cursor = state.editor.getCursor();
-        const lines = state.editor.lineCount();
-        $('fm-editor-lines').textContent = lines + ' שורות · שורה ' + (cursor.line + 1) + ', עמודה ' + (cursor.ch + 1);
-        state.dirty = state.editor.getValue() !== state.original;
+        if (!state.editor && !$('fm-editor')) return;
+        const content = state.editor ? state.editor.getValue() : $('fm-editor').value;
+        let line = 1;
+        let column = 1;
+        let lines = 1;
+        if (state.editor) {
+            const cursor = state.editor.getCursor();
+            lines = state.editor.lineCount();
+            line = cursor.line + 1;
+            column = cursor.ch + 1;
+        } else {
+            const before = content.slice(0, $('fm-editor').selectionStart || 0);
+            line = before.split('\n').length;
+            column = before.length - before.lastIndexOf('\n');
+            lines = content.split('\n').length;
+        }
+        $('fm-editor-lines').textContent = lines + ' שורות · שורה ' + line + ', עמודה ' + column;
+        state.dirty = content !== state.original;
         $('fm-editor-dirty').textContent = state.dirty ? 'יש שינויים שטרם נשמרו' : 'אין שינויים שלא נשמרו';
         $('fm-editor-dirty').classList.toggle('fm-editor-dirty', state.dirty);
         $('fm-editor-status').textContent = state.dirty ? 'נערך · טרם נשמר' : 'הקובץ מסונכרן';
@@ -342,6 +462,15 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
     async function load(folder) {
         state.path = folder || '';
+        state.selectedItem = null;
+        $('fm-preview-title').textContent = 'תצוגה מקדימה';
+        $('fm-preview-meta').textContent = '';
+        $('fm-preview-image').hidden = true;
+        $('fm-preview-content').replaceChildren();
+        $('fm-preview-empty').hidden = false;
+        $('fm-preview-empty').textContent = 'בחר קובץ כדי לראות פרטים או תצוגה מקדימה.';
+        $('fm-preview-edit').hidden = true;
+        document.querySelectorAll('.fm-nav-button').forEach(button => button.classList.toggle('is-active', button.dataset.path === state.path));
         $('fm-current-path').textContent = '/' + state.path;
         $('fm-breadcrumb').textContent = '/' + state.path;
         $('fm-up').disabled = !state.path || state.path === state.homePath;
@@ -375,20 +504,98 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         }
     }
 
+    function fileIcon(item) {
+        if (item.type === 'directory') return 'fa-folder';
+        if (item.type === 'symlink') return 'fa-link';
+        const ext = String(item.name || '').split('.').pop().toLowerCase();
+        if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'svg', 'ico'].includes(ext)) return 'fa-file-image';
+        if (['zip', 'gz', 'tar', '7z', 'rar'].includes(ext)) return 'fa-file-archive';
+        if (['js', 'mjs', 'cjs', 'json', 'php', 'py', 'html', 'htm', 'css', 'scss', 'xml', 'sql', 'sh', 'yml', 'yaml', 'md'].includes(ext)) return 'fa-file-code';
+        if (ext === 'pdf') return 'fa-file-pdf';
+        return 'fa-file-alt';
+    }
+
+    async function selectItem(item) {
+        const previewRequestId = ++state.previewRequestId;
+        state.selectedItem = item;
+        document.querySelectorAll('.fm-file-row.is-selected').forEach(row => row.classList.remove('is-selected'));
+        const selectedPath = String(item.path || '');
+        const row = Array.from(document.querySelectorAll('.fm-file-row')).find(node => node.dataset.path === selectedPath);
+        if (row) row.classList.add('is-selected');
+
+        $('fm-preview-title').textContent = item.name || selectedPath.split('/').pop();
+        $('fm-preview-meta').textContent = item.type === 'directory' ? 'תיקייה' : formatSize(item.size) + ' · ' + formatDate(item.modified);
+        $('fm-preview-content').replaceChildren();
+        $('fm-preview-empty').hidden = true;
+        $('fm-preview-image').hidden = true;
+        $('fm-preview-edit').hidden = false;
+        $('fm-preview-edit').textContent = item.type === 'directory' ? 'פתח תיקייה' : (state.canEdit ? 'ערוך קובץ' : 'פתח לצפייה');
+
+        if (item.type === 'directory') {
+            $('fm-preview-content').appendChild(fa('fa-folder-open'));
+            const note = document.createElement('p');
+            note.textContent = 'לחץ פעמיים על התיקייה או על הכפתור כדי לפתוח אותה.';
+            $('fm-preview-content').appendChild(note);
+            return;
+        }
+
+        if (item.type !== 'file') {
+            $('fm-preview-empty').hidden = false;
+            $('fm-preview-empty').textContent = 'אין תצוגה מקדימה לפריט זה.';
+            $('fm-preview-edit').hidden = true;
+            return;
+        }
+
+        const loading = document.createElement('div');
+        loading.className = 'fm-preview-loading';
+        loading.append(fa('fa-circle-notch fa-spin'), document.createTextNode(' טוען תצוגה מקדימה…'));
+        $('fm-preview-content').appendChild(loading);
+        try {
+            const result = await request('get', '/plugins/file-manager/preview', { path: item.path });
+            if (previewRequestId !== state.previewRequestId) return;
+            $('fm-preview-content').replaceChildren();
+            if (result.kind === 'image') {
+                $('fm-preview-image').src = 'data:' + result.mime + ';base64,' + result.data;
+                $('fm-preview-image').alt = item.name;
+                $('fm-preview-image').hidden = false;
+            } else if (result.kind === 'text') {
+                const pre = document.createElement('pre');
+                pre.className = 'fm-preview-code';
+                pre.dir = 'ltr';
+                pre.textContent = result.content;
+                $('fm-preview-content').appendChild(pre);
+                if (result.truncated) {
+                    const note = document.createElement('small');
+                    note.textContent = 'התצוגה קוצרה. פתח את הקובץ כדי לראות את כולו.';
+                    $('fm-preview-content').appendChild(note);
+                }
+            } else {
+                $('fm-preview-empty').hidden = false;
+                $('fm-preview-empty').textContent = 'אין תצוגה מקדימה לסוג הקובץ הזה. אפשר לפתוח אותו בעורך אם הוא קובץ טקסט נתמך.';
+            }
+        } catch (error) {
+            if (previewRequestId !== state.previewRequestId) return;
+            $('fm-preview-content').replaceChildren();
+            $('fm-preview-empty').hidden = false;
+            $('fm-preview-empty').textContent = error.message || 'לא ניתן להציג תצוגה מקדימה.';
+        }
+    }
+
     function renderFiles(entries) {
         const list = $('fm-file-list');
         list.replaceChildren();
+        list.classList.toggle('is-grid', state.viewMode === 'grid');
         $('fm-item-count').textContent = String(entries.length);
 
         if (!entries.length) {
             const empty = document.createElement('div');
             empty.className = 'fm-empty';
-            empty.appendChild(fa('fa-folder-open'));
-            const bold = document.createElement('strong');
-            bold.textContent = 'התיקייה ריקה';
+            empty.append(fa('fa-folder-open'));
+            const title = document.createElement('strong');
+            title.textContent = 'התיקייה ריקה';
             const hint = document.createElement('span');
             hint.textContent = 'אפשר להעלות קבצים או ליצור פריט חדש';
-            empty.append(bold, hint);
+            empty.append(title, hint);
             list.appendChild(empty);
             return;
         }
@@ -396,26 +603,33 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         entries.forEach(item => {
             const row = document.createElement('div');
             row.className = 'fm-file-row';
+            row.dataset.path = item.path;
+            row.tabIndex = 0;
+            if (state.selectedItem && state.selectedItem.path === item.path) row.classList.add('is-selected');
 
             const name = document.createElement('div');
             name.className = 'fm-file-name' + (item.type === 'directory' ? ' is-directory' : '');
-            const fileIcon = document.createElement('span');
-            fileIcon.className = 'fm-file-icon' + (item.type === 'directory' ? ' is-folder' : '');
-            fileIcon.appendChild(fa(item.type === 'directory' ? 'fa-folder' : item.type === 'symlink' ? 'fa-link' : 'fa-file-alt'));
+            const fileIconNode = document.createElement('span');
+            fileIconNode.className = 'fm-file-icon' + (item.type === 'directory' ? ' is-folder' : '');
+            fileIconNode.appendChild(fa(fileIcon(item)));
             const label = document.createElement('span');
             label.className = 'fm-file-name-label';
             label.dir = 'auto';
             label.textContent = item.name;
-            name.append(fileIcon, label);
-            if (item.type === 'directory') name.addEventListener('click', () => load(item.path));
+            name.append(fileIconNode, label);
 
             const type = document.createElement('span');
             type.className = 'fm-file-type' + (item.type === 'directory' ? ' is-folder' : '');
-            type.textContent = item.type === 'directory' ? 'תיקייה' : item.type === 'symlink' ? 'קישור' : item.type === 'other' ? 'אחר' : 'קובץ';
+            type.textContent = item.type === 'directory' ? 'תיקייה' : item.type === 'symlink' ? 'קישור' :
+                item.type === 'other' ? 'אחר' : (String(item.name).split('.').pop().toUpperCase() || 'קובץ');
 
             const size = document.createElement('span');
             size.className = 'fm-file-meta';
             size.textContent = formatSize(item.size);
+
+            const modified = document.createElement('span');
+            modified.className = 'fm-file-modified';
+            modified.textContent = formatDate(item.modified);
 
             const actions = document.createElement('div');
             actions.className = 'fm-file-actions';
@@ -426,11 +640,22 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             if (state.canEdit && (item.type === 'file' || item.type === 'directory')) {
                 actions.appendChild(makeButton('העתקה', 'fa-copy', () => copyMove(item, false)));
                 actions.appendChild(makeButton('העברה', 'fa-exchange-alt', () => copyMove(item, true)));
-                actions.appendChild(makeButton('שם', 'fa-pen', () => renameItem(item)));
+                actions.appendChild(makeButton('שינוי שם', 'fa-pen', () => renameItem(item)));
                 actions.appendChild(makeButton('מחיקה', 'fa-trash-alt', () => removeItem(item), true));
             }
 
-            row.append(name, type, size, actions);
+            row.append(name, type, size, modified, actions);
+            row.addEventListener('click', () => selectItem(item));
+            row.addEventListener('dblclick', () => {
+                if (item.type === 'directory') load(item.path);
+                else if (item.type === 'file') openFile(item.path);
+            });
+            row.addEventListener('keydown', event => {
+                if (event.key === 'Enter') {
+                    if (item.type === 'directory') load(item.path);
+                    else if (item.type === 'file') openFile(item.path);
+                }
+            });
             list.appendChild(row);
         });
     }
@@ -459,7 +684,23 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             $('fm-editor-panel').hidden = false;
             $('fm-workspace-grid').classList.add('has-editor');
             $('fm-editor').value = fileResult ? fileResult.content : '';
-            toast('טעינת עורך הקוד נכשלה: ' + (error.message || 'שגיאה'), true);
+            $('fm-editor').readOnly = !state.canEdit;
+            $('fm-editor-language').textContent = 'עורך טקסט בסיסי (גיבוי)';
+            ['fm-editor-find', 'fm-editor-wrap', 'fm-editor-fullscreen'].forEach(id => { $(id).disabled = true; });
+            if ($('fm-editor').dataset.fmFallbackBound !== 'true') {
+                $('fm-editor').addEventListener('input', updateEditorStatus);
+                $('fm-editor').addEventListener('keyup', updateEditorStatus);
+                $('fm-editor').addEventListener('click', updateEditorStatus);
+                $('fm-editor').addEventListener('keydown', event => {
+                    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+                        event.preventDefault();
+                        saveFile();
+                    }
+                });
+                $('fm-editor').dataset.fmFallbackBound = 'true';
+            }
+            updateEditorStatus();
+            toast('טעינת עורך הקוד נכשלה. נפתח עורך גיבוי: ' + (error.message || 'שגיאה'), true);
         }
     }
 
@@ -470,10 +711,10 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         if (new Blob([content]).size > 2 * 1024 * 1024) return toast('הקובץ חורג ממגבלת העריכה של 2MB', true);
 
         try {
-            const result = await securePost('/plugins/file-manager/write', {
+            const result = await secureFilePost('/plugins/file-manager/write', {
                 path: state.editing,
                 content
-            }, 'כדי לשמור שינויים בקובץ, הזן את סיסמת חשבון NodeBB שלך.');
+            }, 'כדי לשמור שינויים בקובץ, הזן את סיסמת מנהל הקבצים האישית שלך.');
             if (!result) return;
             state.original = content;
             if (state.editor) state.editor.clearHistory();
@@ -488,7 +729,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const value = await askValue('יצירת תיקייה', 'הקלד שם לתיקייה החדשה.', '', 'שם התיקייה', 'יצירת תיקייה');
         if (!value || !value.trim()) return;
         try {
-            const result = await securePost('/plugins/file-manager/mkdir', {
+            const result = await secureFilePost('/plugins/file-manager/mkdir', {
                 path: (state.path ? state.path + '/' : '') + value.trim()
             }, 'אימות סיסמה נדרש לפני יצירת תיקייה.');
             if (!result) return;
@@ -502,7 +743,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         if (!value || !value.trim()) return;
         const folder = (state.path ? state.path + '/' : '') + value.trim();
         try {
-            const result = await securePost('/plugins/file-manager/write', { path: folder, content: '' }, 'אימות סיסמה נדרש לפני יצירת קובץ חדש.');
+            const result = await secureFilePost('/plugins/file-manager/write', { path: folder, content: '' }, 'אימות סיסמה נדרש לפני יצירת קובץ חדש.');
             if (!result) return;
             toast('הקובץ נוצר בהצלחה');
             await load(state.path);
@@ -514,7 +755,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const value = await askValue('שינוי שם', 'הקלד את השם החדש של הפריט.', item.name, 'שם חדש', 'שמירת השם');
         if (!value || !value.trim() || value.trim() === item.name) return;
         try {
-            const result = await securePost('/plugins/file-manager/rename', {
+            const result = await secureFilePost('/plugins/file-manager/rename', {
                 path: item.path,
                 newName: value.trim()
             }, 'אימות סיסמה נדרש לפני שינוי שם.');
@@ -528,7 +769,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const approved = await askConfirmation('העברה לסל המחזור', 'להעביר את "' + item.name + '" לסל המחזור? אפשר לשחזר אותו בהמשך.', 'העבר לסל המחזור');
         if (!approved) return;
         try {
-            const result = await securePost('/plugins/file-manager/delete', { path: item.path }, 'אימות סיסמה נדרש לפני העברת פריט לסל המחזור.');
+            const result = await secureFilePost('/plugins/file-manager/delete', { path: item.path }, 'אימות סיסמה נדרש לפני העברת פריט לסל המחזור.');
             if (!result) return;
             toast('הפריט הועבר לסל המחזור');
             await load(state.path);
@@ -540,7 +781,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const value = await askValue(move ? 'העברת פריט' : 'העתקת פריט', 'הזן נתיב יעד יחסי לתיקיית NodeBB.', suggested, 'למשל public/uploads/example', move ? 'העברה' : 'העתקה');
         if (!value || !value.trim()) return;
         try {
-            const result = await securePost('/plugins/file-manager/' + (move ? 'move' : 'copy'), {
+            const result = await secureFilePost('/plugins/file-manager/' + (move ? 'move' : 'copy'), {
                 path: item.path,
                 destination: value.trim()
             }, 'אימות סיסמה נדרש לפני העתקה או העברה.');
@@ -555,7 +796,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         if (query.length < 2) return toast('יש להזין לפחות שני תווים לחיפוש', true);
         try {
             const result = await request('get', '/plugins/file-manager/search', { q: query, path: state.path });
-            renderFiles((result.results || []).map(item => ({ ...item, name: item.path })));
+            renderFiles((result.results || []).map(item => ({ ...item, name: String(item.path).split('/').pop() })));
             toast(result.truncated ? 'הוצגו תוצאות חלקיות. צמצם את החיפוש.' : 'נמצאו ' + result.results.length + ' תוצאות');
         } catch (error) { toast(error.message || 'החיפוש נכשל', true); }
     }
@@ -563,13 +804,27 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     async function uploadFiles(input) {
         const files = Array.from(input.files || []);
         if (!files.length) return;
-        let password = await askPassword('הזן סיסמה פעם אחת כדי לאשר את כל מנות ההעלאה. הסיסמה לא נשמרת בתוסף.');
+        if (!state.fmPasswordConfigured) {
+            input.value = '';
+            toast('יש להגדיר תחילה סיסמת מנהל קבצים אישית.', true);
+            openVaultDialog();
+            return;
+        }
+
+        let password = await askPassword('הזן את סיסמת מנהל הקבצים כדי לאשר את ההעלאה.', 'file-manager');
         if (password === null) {
             input.value = '';
             return;
         }
 
         let count = 0;
+        state.uploadController = new AbortController();
+        state.uploadActive = true;
+        $('fm-upload-progress-wrap').hidden = false;
+        $('fm-upload-progress').value = 0;
+        $('fm-upload-progress-label').textContent = 'מתחיל העלאה של ' + files.length + ' קבצים…';
+        $('fm-upload-cancel').disabled = false;
+
         try {
             for (let offset = 0; offset < files.length; offset += 20) {
                 const batch = files.slice(offset, offset + 20);
@@ -581,20 +836,45 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 });
                 form.append('relativePaths', JSON.stringify(paths));
                 form.append('path', state.path);
-                const result = await request('post', '/plugins/file-manager/upload', form, {
-                    'x-password-confirmation': password
+
+                const response = await fetch((config.relative_path || '') + '/api/v3/plugins/file-manager/upload', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'x-csrf-token': config.csrf_token,
+                        'x-file-manager-password': password
+                    },
+                    body: form,
+                    signal: state.uploadController.signal
                 });
+                const raw = await response.json().catch(() => ({}));
+                const result = raw && raw.response ? raw.response : raw;
+                if (!response.ok) {
+                    const message = result && result.status && result.status.message || result.error || response.statusText;
+                    const error = new Error(message || 'ההעלאה נכשלה');
+                    error.status = response.status;
+                    throw error;
+                }
                 count += result.count || batch.length;
-                toast('הועלו ' + count + ' מתוך ' + files.length + ' קבצים');
+                const percent = Math.round((count / files.length) * 100);
+                $('fm-upload-progress').value = percent;
+                $('fm-upload-progress-label').textContent = 'הועלו ' + count + ' מתוך ' + files.length + ' קבצים (' + percent + '%)';
             }
             toast('ההעלאה הושלמה: ' + count + ' קבצים');
-            await load(state.path);
         } catch (error) {
-            toast('ההעלאה נעצרה לאחר ' + count + ' קבצים: ' + (error.message || 'שגיאה'), true);
-            await load(state.path);
+            if (error.name === 'AbortError') {
+                toast('ההעלאה בוטלה לאחר ' + count + ' קבצים. ייתכן שהמנה האחרונה כבר הושלמה בשרת.');
+            } else {
+                toast('ההעלאה נעצרה לאחר ' + count + ' קבצים: ' + (error.message || 'שגיאה'), true);
+            }
         } finally {
             password = '';
+            state.uploadActive = false;
+            state.uploadController = null;
+            $('fm-upload-progress-wrap').hidden = true;
+            $('fm-upload-cancel').disabled = true;
             input.value = '';
+            await load(state.path);
         }
     }
 
@@ -602,7 +882,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const approved = await askConfirmation('חילוץ ארכיון ZIP', 'לחלץ את הארכיון לתיקייה הנוכחית? קבצים קיימים לא יידרסו.', 'חלץ ארכיון');
         if (!approved) return;
         try {
-            const result = await securePost('/plugins/file-manager/extract', {
+            const result = await secureFilePost('/plugins/file-manager/extract', {
                 path: folder,
                 destination: state.path
             }, 'אימות סיסמה נדרש לפני חילוץ ארכיון.');
@@ -614,7 +894,6 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
     async function openBackups() {
         $('fm-backups-panel').hidden = false;
-        $('fm-backups-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
         const list = $('fm-backups-list');
         list.replaceChildren();
         const loading = document.createElement('div');
@@ -670,7 +949,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const approved = await askConfirmation('שחזור פריט', 'לשחזר את הפריט? אם כבר קיים פריט באותו נתיב, השחזור לא ידרוס אותו.\n' + item.path, 'שחזור');
         if (!approved) return;
         try {
-            const result = await securePost('/plugins/file-manager/restore', { id: item.id }, 'אימות סיסמה נדרש לפני שחזור גיבוי.');
+            const result = await secureFilePost('/plugins/file-manager/restore', { id: item.id }, 'אימות סיסמה נדרש לפני שחזור גיבוי.');
             if (!result) return;
             toast('השחזור הושלם בהצלחה');
             await openBackups();
@@ -682,7 +961,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         const approved = await askConfirmation('מחיקה לצמיתות', 'למחוק לצמיתות את הפריט ואת כל תוכנו? לא ניתן לשחזר פעולה זו.\n' + item.path, 'מחיקה לצמיתות');
         if (!approved) return;
         try {
-            const result = await securePost('/plugins/file-manager/purge', { id: item.id }, 'אימות סיסמה נדרש לפני מחיקה לצמיתות.');
+            const result = await secureFilePost('/plugins/file-manager/purge', { id: item.id }, 'אימות סיסמה נדרש לפני מחיקה לצמיתות.');
             if (!result) return;
             toast('הפריט נמחק לצמיתות');
             await openBackups();
@@ -692,7 +971,6 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     async function openAccessPanel() {
         if (!state.canManageAccess) return;
         $('fm-access-panel').hidden = false;
-        $('fm-access-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
         $('fm-user-search-results').replaceChildren();
         try {
             const result = await request('get', '/plugins/file-manager/access', {});
@@ -757,6 +1035,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                     username: user.username,
                     userslug: user.userslug,
                     picture: user.picture,
+                    hasPassword: false,
                     role: 'viewer'
                 });
                 renderAllowedUsers();
@@ -819,7 +1098,18 @@ define('admin/plugins/file-manager', ['api'], function (api) {
                 renderAllowedUsers();
                 renderUserSearchResults();
             });
-            row.append(name, select, remove);
+            const keyStatus = document.createElement('span');
+            keyStatus.className = item.hasPassword ? 'fm-key-status is-set' : 'fm-key-status is-missing';
+            keyStatus.textContent = item.hasPassword ? 'מפתח מוגדר' : 'ללא מפתח';
+
+            const reset = document.createElement('button');
+            reset.type = 'button';
+            reset.className = 'fm-action-btn';
+            reset.textContent = item.hasPassword ? 'איפוס מפתח' : 'ללא מפתח';
+            reset.disabled = !item.hasPassword;
+            reset.addEventListener('click', event => { event.stopPropagation(); resetUserPassword(item); });
+
+            row.append(name, select, keyStatus, reset, remove);
             list.appendChild(row);
         });
     }
@@ -852,11 +1142,16 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     }
 
     async function discardEditorChanges() {
-        if (!state.editor || !state.dirty) return;
+        const currentContent = state.editor ? state.editor.getValue() : $('fm-editor').value;
+        if (currentContent === state.original) return;
         const approved = await askConfirmation('ביטול שינויים', 'להחזיר את תוכן העורך לגרסה האחרונה שנשמרה?', 'ביטול שינויים');
         if (!approved) return;
-        state.editor.setValue(state.original);
-        state.editor.clearHistory();
+        if (state.editor) {
+            state.editor.setValue(state.original);
+            state.editor.clearHistory();
+        } else {
+            $('fm-editor').value = state.original;
+        }
         updateEditorStatus();
     }
 
@@ -897,6 +1192,16 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         $('fm-search-input').addEventListener('keydown', event => { if (event.key === 'Enter') searchFiles(); });
         $('fm-search-clear').addEventListener('click', () => { $('fm-search-input').value = ''; load(state.path); });
         $('fm-backups').addEventListener('click', openBackups);
+        $('fm-upload-cancel').addEventListener('click', () => {
+            if (state.uploadController) state.uploadController.abort();
+        });
+        $('fm-vault-open').addEventListener('click', openVaultDialog);
+        $('fm-vault-save').addEventListener('click', saveVaultPassword);
+        $('fm-vault-cancel').addEventListener('click', () => { $('fm-vault-dialog').hidden = true; });
+        $('fm-vault-dialog').addEventListener('click', event => {
+            if (event.target === $('fm-vault-dialog')) $('fm-vault-dialog').hidden = true;
+        });
+        $('fm-vault-confirm').addEventListener('keydown', event => { if (event.key === 'Enter') saveVaultPassword(); });
         $('fm-close-backups').addEventListener('click', () => { $('fm-backups-panel').hidden = true; });
         $('fm-access-open').addEventListener('click', openAccessPanel);
         $('fm-access-close').addEventListener('click', () => { $('fm-access-panel').hidden = true; });
@@ -910,6 +1215,28 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         $('fm-editor-wrap').addEventListener('click', toggleWrap);
         $('fm-editor-fullscreen').addEventListener('click', toggleFullScreen);
         $('fm-editor-find').addEventListener('click', () => { if (state.editor) state.editor.execCommand('findPersistent'); });
+        $('fm-preview-edit').addEventListener('click', () => {
+            if (!state.selectedItem) return;
+            if (state.selectedItem.type === 'directory') load(state.selectedItem.path);
+            else openFile(state.selectedItem.path);
+        });
+        $('fm-view-list').addEventListener('click', () => {
+            state.viewMode = 'list';
+            $('fm-view-list').classList.add('is-active');
+            $('fm-view-grid').classList.remove('is-active');
+            request('get', '/plugins/file-manager/list', { path: state.path }).then(result => renderFiles(result.entries || []))
+                .catch(error => toast(error.message || 'טעינת התיקייה נכשלה', true));
+        });
+        $('fm-view-grid').addEventListener('click', () => {
+            state.viewMode = 'grid';
+            $('fm-view-grid').classList.add('is-active');
+            $('fm-view-list').classList.remove('is-active');
+            request('get', '/plugins/file-manager/list', { path: state.path }).then(result => renderFiles(result.entries || []))
+                .catch(error => toast(error.message || 'טעינת התיקייה נכשלה', true));
+        });
+        document.querySelectorAll('.fm-nav-button').forEach(button => {
+            button.addEventListener('click', () => load(button.dataset.path || state.homePath));
+        });
 
         $('fm-dialog-cancel').addEventListener('click', () => finishValueDialog(null));
         $('fm-dialog-confirm').addEventListener('click', () => finishValueDialog($('fm-dialog-input').value));
@@ -947,6 +1274,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
         Promise.resolve()
             .then(loadPermissions)
+            .then(loadSecurityStatus)
             .then(() => load(state.homePath))
             .catch(error => {
                 toast(error.message || 'טעינת ההרשאות נכשלה', true);
