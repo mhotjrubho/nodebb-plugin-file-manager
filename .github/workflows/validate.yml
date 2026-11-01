@@ -27,6 +27,51 @@ jobs:
         run: |
           node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"
           node -e "JSON.parse(require('fs').readFileSync('plugin.json', 'utf8'))"
+      - name: Verify CodeMirror package and assets
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const pkg = require('./package.json');
+          const plugin = require('./plugin.json');
+          if (pkg.dependencies.codemirror !== '5.65.20') throw new Error('Unexpected CodeMirror version');
+          if (plugin.staticDirs?.vendor !== 'node_modules/codemirror') throw new Error('CodeMirror static directory is not mapped');
+          const files = [
+            'lib/codemirror.js',
+            'lib/codemirror.css',
+            'theme/material-darker.css',
+            'addon/fold/foldgutter.css',
+            'addon/dialog/dialog.css',
+            'addon/display/fullscreen.css',
+            'mode/xml/xml.js',
+            'mode/javascript/javascript.js',
+            'mode/css/css.js',
+            'mode/htmlmixed/htmlmixed.js',
+            'mode/clike/clike.js',
+            'mode/php/php.js',
+            'mode/python/python.js',
+            'mode/shell/shell.js',
+            'mode/yaml/yaml.js',
+            'mode/markdown/markdown.js',
+            'mode/sql/sql.js',
+            'addon/edit/closebrackets.js',
+            'addon/edit/matchbrackets.js',
+            'addon/edit/matchtags.js',
+            'addon/selection/active-line.js',
+            'addon/display/fullscreen.js',
+            'addon/fold/foldcode.js',
+            'addon/fold/foldgutter.js',
+            'addon/fold/brace-fold.js',
+            'addon/fold/xml-fold.js',
+            'addon/search/searchcursor.js',
+            'addon/dialog/dialog.js',
+            'addon/search/search.js'
+          ];
+          const root = path.dirname(require.resolve('codemirror'));
+          for (const file of files) {
+            if (!fs.existsSync(path.join(root, file))) throw new Error('Missing CodeMirror asset: ' + file);
+          }
+          NODE
       - name: Verify security and interface invariants
         run: |
           node - <<'NODE'
@@ -36,17 +81,28 @@ jobs:
           const library = fs.readFileSync('library.js', 'utf8');
           const page = fs.readFileSync('templates/admin/plugins/file-manager.tpl', 'utf8');
           const client = fs.readFileSync('public/lib/admin.js', 'utf8');
+          const styles = fs.readFileSync('public/scss/admin.scss', 'utf8');
 
           const uploadStart = library.indexOf("router.post(\n        '/api/v3/plugins/file-manager/upload'");
-          const adminCheck = library.indexOf('adminOnly', uploadStart);
+          const editorGuard = library.indexOf('editorAccess', uploadStart);
+          const passwordGuard = library.indexOf('requireCurrentPassword', uploadStart);
           const multipart = library.indexOf('upload.any()', uploadStart);
 
           const checks = [
-            [manager.includes('parts[0] === BACKUP_NAME'), 'protected backup path'],
-            [manager.includes('fs.promises.rename(target, trashFile)'), 'recycle bin deletion'],
+            [manager.includes('parts[0] === BACKUP_NAME'), 'protected backup directory'],
+            [manager.includes('fs.promises.rename(target, trashFile)'), 'recoverable deletion'],
             [extra.includes('MAX_TOTAL') && extra.includes('5000'), 'upload and archive limits'],
             [extra.includes('async function purge(id)'), 'explicit permanent deletion'],
-            [uploadStart >= 0 && adminCheck > uploadStart && multipart > adminCheck, 'authorization before multipart upload'],
+            [library.includes('middleware.requirePasswordAuth'), 'NodeBB native password verification'],
+            [library.includes('settings.allowedUsers') || library.includes('allowedUsers'), 'stored access list'],
+            [library.includes("requestedPath === 'public' || requestedPath.startsWith('public/')"), 'viewer scope limited to public directory'],
+            [uploadStart >= 0 && editorGuard > uploadStart && passwordGuard > editorGuard && multipart > passwordGuard, 'role and password checked before multipart upload'],
+            [client.includes('CodeMirror.fromTextArea') && client.includes('lineNumbers: true'), 'CodeMirror with line numbers'],
+            [client.includes('matchBrackets: true') && client.includes('foldGutter: true'), 'editor matching and code folding'],
+            [client.includes('x-password-confirmation'), 'password sent through NodeBB-supported header'],
+            [!client.includes('window.confirm') && !client.includes('prompt('), 'custom dialogs instead of browser prompts'],
+            [page.includes('dir="rtl"') && page.includes('id="fm-password-dialog"'), 'RTL shell and password modal'],
+            [styles.includes('direction: rtl') && styles.includes('direction: ltr'), 'mixed RTL and LTR styling'],
           ];
           for (const [ok, label] of checks) {
             if (!ok) throw new Error('Failed check: ' + label);
