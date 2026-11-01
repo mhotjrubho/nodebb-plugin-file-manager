@@ -1138,3 +1138,185 @@
         font-size: 14px;
     }
 }
+
+
+/* Extra Windows 11 Explorer chrome: active folder tab, address history and status bar. */
+.file-manager-page .fm-tab-strip {
+    display: flex;
+    min-height: 42px;
+    align-items: flex-end;
+    gap: 5px;
+    padding: 5px 12px 0;
+    direction: rtl;
+    border-bottom: 1px solid #dce2ea;
+    background: #f2f4f7;
+}
+
+.file-manager-page .fm-tab-active {
+    display: flex;
+    min-width: 205px;
+    max-width: 340px;
+    height: 36px;
+    align-items: center;
+    gap: 9px;
+    padding: 0 14px;
+    overflow: hidden;
+    border: 1px solid #dce2ea;
+    border-bottom-color: #fff;
+    border-radius: 8px 8px 0 0;
+    color: #34445c;
+    background: #fff;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.file-manager-page .fm-tab-active i {
+    color: #c69b47;
+    font-size: 15px;
+}
+
+.file-manager-page .fm-tab-active span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-manager-page .fm-address-nav {
+    display: grid;
+    flex: 0 0 30px;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    color: #53647a;
+    background: transparent;
+}
+
+.file-manager-page .fm-address-nav:hover:not(:disabled),
+.file-manager-page .fm-address-up:hover:not(:disabled) {
+    background: #e8edf4;
+}
+
+.file-manager-page .fm-address-nav:disabled {
+    color: #b8c0cc;
+    cursor: default;
+    opacity: .55;
+}
+
+.file-manager-page .fm-statusbar {
+    display: flex;
+    min-height: 36px;
+    align-items: center;
+    gap: 15px;
+    padding: 4px 14px;
+    direction: rtl;
+    border-top: 1px solid #e2e6ed;
+    color: #69778a;
+    background: #f7f8fa;
+    font-size: 13px;
+}
+
+.file-manager-page .fm-statusbar-location,
+.file-manager-page .fm-statusbar-details {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+}
+
+.file-manager-page .fm-statusbar-location {
+    flex: 1 1 auto;
+    overflow: hidden;
+}
+
+.file-manager-page .fm-statusbar-location i {
+    flex: 0 0 auto;
+    color: #b58a39;
+}
+
+.file-manager-page #fm-status-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-manager-page .fm-statusbar-details {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.file-manager-page .fm-statusbar-divider {
+    width: 1px;
+    height: 16px;
+    background: #dce2ea;
+}
+
+.file-manager-page .fm-statusbar-view {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid #dfe4ec;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.file-manager-page .fm-statusbar-view button {
+    display: grid;
+    width: 28px;
+    height: 26px;
+    place-items: center;
+    border: 0;
+    border-radius: 4px;
+    color: #6e7b8d;
+    background: transparent;
+}
+
+.file-manager-page .fm-statusbar-view button.is-active {
+    color: #155da9;
+    background: #e5f0fd;
+}
+
+.file-manager-page .fm-statusbar-view button:hover {
+    background: #edf3fa;
+}
+
+@media (max-width: 700px) {
+    .file-manager-page .fm-tab-strip {
+        min-height: 39px;
+        padding-right: 7px;
+    }
+
+    .file-manager-page .fm-tab-active {
+        min-width: 150px;
+        height: 33px;
+        font-size: 13px;
+    }
+
+    .file-manager-page .fm-statusbar {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 7px 10px;
+        padding: 7px 10px;
+    }
+
+    .file-manager-page .fm-statusbar-location {
+        flex-basis: 100%;
+    }
+
+    .file-manager-page .fm-statusbar-details {
+        flex: 1 1 auto;
+        font-size: 12px;
+    }
+
+    .file-manager-page .fm-statusbar-view {
+        margin-right: auto;
+    }
+
+    .file-manager-page .fm-address-nav {
+        width: 27px;
+        flex-basis: 27px;
+        height: 28px;
+    }
+}
