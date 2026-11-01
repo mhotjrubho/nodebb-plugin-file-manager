@@ -325,6 +325,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
         const uids = allowed.map(item => Number(item.uid));
         const users = uids.length ? await user.getUsersWithFields(uids, ['uid', 'username', 'userslug', 'picture'], 0) : [];
         const byUid = new Map(users.filter(Boolean).map(item => [String(item.uid), item]));
+        const credentials = await getFileManagerCredentials();
         return {
             users: allowed.map(item => {
                 const profile = byUid.get(String(item.uid));
@@ -334,7 +335,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
                     userslug: profile.userslug,
                     picture: profile.picture,
                     role: item.role,
-                    hasPassword: Boolean((await getFileManagerCredentials())[String(item.uid)])
+                    hasPassword: Boolean(credentials[String(item.uid)])
                 } : null;
             }).filter(Boolean)
         };
