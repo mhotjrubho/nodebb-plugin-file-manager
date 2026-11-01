@@ -18,6 +18,7 @@ const FM_PASSWORD_MAX_LENGTH = 256;
 const FM_PASSWORD_LOCK_MS = 15 * 60 * 1000;
 const FM_PASSWORD_MAX_ATTEMPTS = 5;
 const passwordFailures = new Map();
+let settingsWriteQueue = Promise.resolve();
 
 async function getPluginSettings() {
     const settings = await meta.settings.get(PLUGIN_ID);
@@ -25,8 +26,12 @@ async function getPluginSettings() {
 }
 
 async function updatePluginSettings(patch) {
-    const current = await getPluginSettings();
-    await meta.settings.set(PLUGIN_ID, { ...current, ...patch });
+    const write = settingsWriteQueue.then(async () => {
+        const current = await getPluginSettings();
+        await meta.settings.set(PLUGIN_ID, { ...current, ...patch });
+    });
+    settingsWriteQueue = write.catch(() => {});
+    await write;
 }
 
 async function deriveFileManagerPassword(password, salt) {
@@ -59,7 +64,7 @@ async function verifyFileManagerPassword(uid, password) {
 }
 
 async function getAllowedUsers() {
-    const settings = await meta.settings.get(PLUGIN_ID);
+    const settings = await getPluginSettings();
     return Array.isArray(settings.allowedUsers) ? settings.allowedUsers : [];
 }
 
@@ -202,8 +207,8 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
     const requireFileManagerPassword = async (req, res, next) => {
         try {
             const supplied = req.headers['x-file-manager-password'];
-            if (typeof supplied !== 'string' || !supplied) {
-                return deny(res, 401, 'נדרש מפתח סיסמת מנהל הקבצים');
+            if (typeof supplied !== 'string' || !supplied || Buffer.byteLength(supplied, 'utf8') > FM_PASSWORD_MAX_LENGTH) {
+                return deny(res, 401, 'נדרש מפתח סיסמת מנהל הקבצים תקין');
             }
 
             const key = String(req.uid) + ':' + String(req.ip || 'unknown');
@@ -370,7 +375,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
         return { success: true, count: allowedUsers.length };
     });
 
-    // All file-system mutations require the current user's NodeBB password again.
+    // File-system mutations require the user's separate File Manager password.
     post('/api/v3/plugins/file-manager/write', [editorAccess, requireFileManagerPassword], req =>
         FileManager.write(req.body.path, req.body.content));
     post('/api/v3/plugins/file-manager/mkdir', [editorAccess, requireFileManagerPassword], req =>
