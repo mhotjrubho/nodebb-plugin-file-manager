@@ -1,23 +1,21 @@
 'use strict';
 
 require(['hooks'], function (hooks) {
-    function initializeFileManagerPage() {
-        if (!document.querySelector('.file-manager-page')) {
-            return;
+    hooks.on('filter:script.load', function (data) {
+        if (data.tpl_url !== 'admin/plugins/file-manager') {
+            return data;
         }
 
-        require(['admin/plugins/file-manager'], function (FileManagerPage) {
-            if (FileManagerPage && typeof FileManagerPage.init === 'function') {
-                FileManagerPage.init();
-            }
-        });
-    }
+        // NodeBB 4.x resolves the page template as a webpack module by default.
+        // This plugin page is an AMD module bundled in scripts-admin instead.
+        data.scripts = [function () {
+            require(['admin/plugins/file-manager'], function (FileManagerPage) {
+                if (FileManagerPage && typeof FileManagerPage.init === 'function') {
+                    FileManagerPage.init();
+                }
+            });
+        }];
 
-    hooks.on('action:ajaxify.end', initializeFileManagerPage);
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializeFileManagerPage, { once: true });
-    } else {
-        initializeFileManagerPage();
-    }
+        return data;
+    });
 });
