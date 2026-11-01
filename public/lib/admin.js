@@ -4,6 +4,8 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
     const state = {
         path: '',
         homePath: '',
+        navigationHistory: [],
+        navigationIndex: -1,
         role: 'viewer',
         canEdit: false,
         canManageAccess: false,
@@ -554,8 +556,41 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         $('fm-editor-language').textContent = typeof mode === 'string' ? mode : 'JSON / JavaScript';
     }
 
-    async function load(folder) {
+    function updateHistoryButtons() {
+        $('fm-history-back').disabled = state.navigationIndex <= 0;
+        $('fm-history-forward').disabled =
+            state.navigationIndex < 0 || state.navigationIndex >= state.navigationHistory.length - 1;
+    }
+
+    function rememberPath(folder) {
+        const nextPath = folder || '';
+        const currentPath = state.navigationHistory[state.navigationIndex];
+        if (currentPath === nextPath) return;
+
+        state.navigationHistory = state.navigationHistory.slice(0, state.navigationIndex + 1);
+        state.navigationHistory.push(nextPath);
+        state.navigationIndex = state.navigationHistory.length - 1;
+        updateHistoryButtons();
+    }
+
+    async function navigateHistory(offset) {
+        const nextIndex = state.navigationIndex + offset;
+        if (nextIndex < 0 || nextIndex >= state.navigationHistory.length) return;
+
+        state.navigationIndex = nextIndex;
+        const nextPath = state.navigationHistory[nextIndex];
+        await load(nextPath, { skipHistory: true });
+        updateHistoryButtons();
+    }
+
+    async function load(folder, options) {
         state.path = folder || '';
+        if (!options || !options.skipHistory) rememberPath(state.path);
+        const folderSegments = state.path.split('/').filter(Boolean);
+        const currentFolderName = folderSegments.length ?
+            folderSegments[folderSegments.length - 1] : 'תיקיית NodeBB';
+        $('fm-tab-title').textContent = currentFolderName;
+        $('fm-status-path').textContent = '/' + state.path;
         state.selectedItem = null;
         $('fm-preview-title').textContent = 'תצוגה מקדימה';
         $('fm-preview-meta').textContent = '';
@@ -1342,6 +1377,8 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
         if (!page || page.dataset.initialized === 'true') return;
         page.dataset.initialized = 'true';
 
+        $('fm-history-back').addEventListener('click', () => navigateHistory(-1));
+        $('fm-history-forward').addEventListener('click', () => navigateHistory(1));
         $('fm-refresh').addEventListener('click', () => load(state.path));
         $('fm-up').addEventListener('click', () => {
             if (!state.path || state.path === state.homePath) return;
