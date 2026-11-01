@@ -179,10 +179,26 @@
         <div class="fm-access-list-heading"><h3>רשימת משתמשים מורשים</h3><span id="fm-access-count">0 משתמשים</span></div>
         <div id="fm-allowed-users" class="fm-allowed-users"><div class="fm-empty">טוען רשימת הרשאות…</div></div>
         <div class="fm-access-savebar">
-            <span>מנהלי NodeBB מקבלים גישה מלאה אוטומטית.</span>
+            <span>רק מנהלי קבצים שאושרו במפתח השרת יכולים לנהל את הרשימה. תפקיד מנהל קבצים מעניק גישה מלאה למערכת.</span>
             <button class="fm-btn fm-btn-primary" id="fm-access-save" type="button"><i class="fa fa-save" aria-hidden="true"></i> שמירת הרשאות</button>
         </div>
     </section>
+
+    <div id="fm-bootstrap-dialog" class="fm-modal-overlay" hidden>
+        <div class="fm-modal fm-vault-modal" role="dialog" aria-modal="true" aria-labelledby="fm-bootstrap-title">
+            <div class="fm-modal-icon is-secure"><i class="fa fa-server" aria-hidden="true"></i></div>
+            <span class="fm-modal-eyebrow">אימות מול השרת</span>
+            <h2 id="fm-bootstrap-title">הפעלת מנהל הקבצים</h2>
+            <p>למנהלי NodeBB אין גישה אוטומטית. כדי להפוך את החשבון שלך למנהל קבצים, יש להזין את מפתח האתחול שנשמר בקובץ מוגן בשרת, ולאמת גם את סיסמת חשבון NodeBB שלך.</p>
+            <label class="fm-password-label" for="fm-bootstrap-key">מפתח האתחול של השרת</label>
+            <input id="fm-bootstrap-key" type="password" dir="ltr" autocomplete="off" placeholder="מפתח סודי בן 32 תווים לפחות">
+            <div class="fm-modal-error" id="fm-bootstrap-error" hidden></div>
+            <div class="fm-modal-actions">
+                <button class="fm-btn fm-btn-primary" id="fm-bootstrap-submit" type="button"><i class="fa fa-shield-alt" aria-hidden="true"></i> אימות והפעלת גישה</button>
+            </div>
+            <small class="fm-password-footnote">המפתח אינו נשמר בדפדפן. לאחר האימות, הגישה תינתן רק לחשבונות שאישרת במפורש.</small>
+        </div>
+    </div>
 
     <div id="fm-vault-dialog" class="fm-modal-overlay" hidden>
         <div class="fm-modal fm-vault-modal" role="dialog" aria-modal="true" aria-labelledby="fm-vault-title">
