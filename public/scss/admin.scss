@@ -646,7 +646,7 @@
 .file-manager-page .fm-file-name { font-size: 13px; }
 .file-manager-page .fm-file-list { max-height: min(72vh, 960px); min-height: 520px; }
 .file-manager-page .fm-pane-heading strong { font-size: 15px; }
-.file-manager-page .fm-current-path { font-size: 12px; }
+.file-manager-page .fm-current-path { font-size: 13px; }
 .file-manager-page .fm-workspace-grid.has-editor {
     direction: ltr;
     grid-template-columns: 224px minmax(320px, .9fr) minmax(480px, 1.2fr);
@@ -663,7 +663,7 @@
 .file-manager-page .fm-preview-heading > div,
 .file-manager-page .fm-preview-file-heading strong { font-size: 13px; }
 .file-manager-page .fm-preview-caption,
-.file-manager-page .fm-preview-file-heading small { font-size: 12px; }
+.file-manager-page .fm-preview-file-heading small { font-size: 13px; }
 
 @media (max-width: 1180px) {
     .file-manager-page .fm-workspace-grid {
@@ -689,8 +689,8 @@
     .file-manager-page .fm-workspace-grid,
     .file-manager-page .fm-workspace-grid.has-editor { display: flex; flex-direction: column; }
     .file-manager-page .fm-navigation { border-right: 0; }
-    .file-manager-page .fm-command { min-width: 68px; font-size: 12px; }
-    .file-manager-page .fm-nav-button { font-size: 12px; }
+    .file-manager-page .fm-command { min-width: 68px; font-size: 13px; }
+    .file-manager-page .fm-nav-button { font-size: 13px; }
     .file-manager-page .fm-workspace-grid.has-editor .fm-editor-panel { order: 1; }
     .file-manager-page .fm-workspace-grid.has-editor .fm-file-pane { order: 2; }
 }
