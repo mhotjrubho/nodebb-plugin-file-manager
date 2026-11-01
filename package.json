@@ -1,7 +1,7 @@
 {
   "name": "nodebb-plugin-file-manager",
-  "version": "0.4.0",
-  "description": "Secure file manager for NodeBB administrators",
+  "version": "0.5.0",
+  "description": "NodeBB file manager with role-based access, native password reauthentication and CodeMirror editor",
   "main": "library.js",
   "license": "MIT",
   "repository": {
@@ -14,8 +14,15 @@
   "nbbpm": {
     "compatibility": "^4.16.0"
   },
-  "keywords": ["nodebb", "plugin", "file-manager", "admin"],
+  "keywords": [
+    "nodebb",
+    "plugin",
+    "file-manager",
+    "admin",
+    "codemirror"
+  ],
   "dependencies": {
+    "codemirror": "5.65.20",
     "yauzl": "^3.2.0"
   }
 }
