@@ -5,6 +5,7 @@
     <div class="file-manager-toolbar">
         <button class="btn btn-default" id="fm-up" type="button">תיקייה קודמת</button>
         <button class="btn btn-primary" id="fm-new-folder" type="button">תיקייה חדשה</button>
+        <button class="btn btn-default" id="fm-new-file" type="button">קובץ חדש</button>
         <button class="btn btn-default" id="fm-refresh" type="button">רענון</button>
         <button class="btn btn-default" id="fm-upload-files" type="button">העלאת קבצים</button>
         <button class="btn btn-default" id="fm-upload-folder" type="button">העלאת תיקייה</button>
