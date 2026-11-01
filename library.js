@@ -271,12 +271,12 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
     });
 
     post('/api/v3/plugins/file-manager/credentials', [managerIdentity, requireCurrentPassword], async req => {
-        const password = req.body && req.body.password;
+        const password = req.body && req.body.newPassword;
         const confirmation = req.body && req.body.confirmation;
         if (typeof password !== 'string' || typeof confirmation !== 'string' ||
             [...password].length < FM_PASSWORD_MIN_LENGTH ||
             Buffer.byteLength(password, 'utf8') > FM_PASSWORD_MAX_LENGTH ||
-            password.includes('\\0') || password !== confirmation) {
+            password.includes(String.fromCharCode(0)) || password !== confirmation) {
             const error = new Error('הסיסמה חייבת להכיל לפחות 12 תווים, להיות זהה בשני השדות ולא לחרוג מ־256 בתים');
             error.status = 400;
             throw error;
