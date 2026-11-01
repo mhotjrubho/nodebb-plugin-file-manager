@@ -975,7 +975,16 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
                     signal: state.uploadController.signal
                 });
 
-                if (response.status === 401) {
+                let uploadNeedsUnlock = response.status === 401;
+                if (response.status === 403) {
+                    const errorPayload = await response.clone().json().catch(() => ({}));
+                    const errorResult = errorPayload && errorPayload.response ? errorPayload.response : errorPayload;
+                    const errorMessage = errorResult && errorResult.status && errorResult.status.message ||
+                        errorResult && errorResult.error || '';
+                    uploadNeedsUnlock = /פג תוקף האימות|יש להזין שוב את סיסמת מנהל הקבצים|נדרש מפתח סיסמת מנהל הקבצים/i.test(String(errorMessage));
+                }
+
+                if (uploadNeedsUnlock) {
                     const refreshed = await unlockFileManager(
                         'האימות פג בזמן ההעלאה. הזן שוב את סיסמת מנהל הקבצים.',
                         true
