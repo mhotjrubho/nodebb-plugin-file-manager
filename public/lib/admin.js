@@ -464,6 +464,7 @@ define('admin/plugins/file-manager', ['api', 'require'], function (api, amdRequi
 
             state.editor = CodeMirror.fromTextArea($('fm-editor'), {
                 mode: 'text/plain',
+                direction: 'ltr',
                 theme: 'material-darker',
                 lineNumbers: true,
                 lineWrapping: false,
