@@ -3,6 +3,7 @@
 define('admin/plugins/file-manager', ['api'], function (api) {
     const state = {
         path: '',
+        homePath: '',
         role: 'viewer',
         canEdit: false,
         canManageAccess: false,
@@ -124,23 +125,21 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     }
 
     async function securePost(route, data, description) {
-        let password = await askPassword(description);
-        if (password === null) return null;
-        try {
-            return await request('post', route, data || {}, { 'x-password-confirmation': password });
-        } catch (error) {
-            const message = String(error && error.message || '');
-            if (/invalid password|password|סיסמ|אימות/i.test(message)) {
-                $('fm-password-error').textContent = 'NodeBB לא אישר את הסיסמה. בדוק אותה ונסה שוב.';
-                $('fm-password-error').hidden = false;
-                $('fm-password-dialog').hidden = false;
-                $('fm-password-input').value = '';
-                $('fm-password-input').focus();
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            let password = await askPassword(description);
+            if (password === null) return null;
+            try {
+                return await request('post', route, data || {}, { 'x-password-confirmation': password });
+            } catch (error) {
+                const message = String(error && error.message || '');
+                const rejected = /invalid password|invalid-password|password|סיסמ|אימות/i.test(message);
+                if (!rejected || attempt === 2) throw error;
+                toast('הסיסמה לא אושרה. נסה שוב.', true);
+            } finally {
+                password = '';
             }
-            throw error;
-        } finally {
-            password = '';
         }
+        return null;
     }
 
     function formatSize(bytes) {
@@ -160,9 +159,11 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         root.classList.toggle('fm-readonly', !state.canEdit);
 
         const roleText = state.role === 'admin' ? 'מנהל מערכת · גישה מלאה' :
-            state.role === 'editor' ? 'משתמש מורשה · עריכה' : 'משתמש מורשה · צפייה בלבד';
+            state.role === 'editor' ? 'משתמש מורשה · עריכה' : 'משתמש מורשה · צפייה בתיקייה הציבורית';
+
         $('fm-role-label').textContent = roleText;
         $('fm-access-open').hidden = !state.canManageAccess;
+        $('fm-backups').hidden = !state.canEdit;
 
         [
             'fm-new-folder',
@@ -183,6 +184,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     async function loadPermissions() {
         const result = await request('get', '/plugins/file-manager/permissions', {});
         state.role = result.role || 'viewer';
+        state.homePath = result.homePath || '';
         state.canEdit = Boolean(result.canEdit);
         state.canManageAccess = Boolean(result.canManageAccess);
         updateRoleUI();
@@ -342,7 +344,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         state.path = folder || '';
         $('fm-current-path').textContent = '/' + state.path;
         $('fm-breadcrumb').textContent = '/' + state.path;
-        $('fm-up').disabled = !state.path;
+        $('fm-up').disabled = !state.path || state.path === state.homePath;
 
         const list = $('fm-file-list');
         list.replaceChildren();
@@ -434,16 +436,17 @@ define('admin/plugins/file-manager', ['api'], function (api) {
     }
 
     async function openFile(folder) {
+        let fileResult = null;
         try {
-            const result = await request('get', '/plugins/file-manager/read', { path: folder });
-            state.editing = result.path;
-            state.original = result.content;
+            fileResult = await request('get', '/plugins/file-manager/read', { path: folder });
+            state.editing = fileResult.path;
+            state.original = fileResult.content;
             $('fm-editor-panel').hidden = false;
             $('fm-workspace-grid').classList.add('has-editor');
             $('fm-editor-title').textContent = folder.split('/').pop();
             $('fm-editor-path').textContent = folder;
             await ensureEditor();
-            state.editor.setValue(result.content);
+            state.editor.setValue(fileResult.content);
             state.editor.clearHistory();
             setEditorMode(folder);
             state.editor.setOption('readOnly', !state.canEdit);
@@ -455,7 +458,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
             // Keep the plain textarea usable as a fallback if the editor assets fail to load.
             $('fm-editor-panel').hidden = false;
             $('fm-workspace-grid').classList.add('has-editor');
-            $('fm-editor').value = result && result.content || '';
+            $('fm-editor').value = fileResult ? fileResult.content : '';
             toast('טעינת עורך הקוד נכשלה: ' + (error.message || 'שגיאה'), true);
         }
     }
@@ -874,7 +877,11 @@ define('admin/plugins/file-manager', ['api'], function (api) {
         page.dataset.initialized = 'true';
 
         $('fm-refresh').addEventListener('click', () => load(state.path));
-        $('fm-up').addEventListener('click', () => load(state.path.split('/').slice(0, -1).join('/')));
+        $('fm-up').addEventListener('click', () => {
+            if (!state.path || state.path === state.homePath) return;
+            const parent = state.path.split('/').slice(0, -1).join('/');
+            load(parent || state.homePath);
+        });
         $('fm-new-folder').addEventListener('click', createFolder);
         $('fm-new-file').addEventListener('click', createFile);
         $('fm-upload-files').addEventListener('click', () => $('fm-files-input').click());
@@ -935,7 +942,7 @@ define('admin/plugins/file-manager', ['api'], function (api) {
 
         Promise.resolve()
             .then(loadPermissions)
-            .then(() => load(''))
+            .then(() => load(state.homePath))
             .catch(error => {
                 toast(error.message || 'טעינת ההרשאות נכשלה', true);
             });
