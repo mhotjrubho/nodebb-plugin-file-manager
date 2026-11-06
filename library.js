@@ -20,6 +20,7 @@ const FM_PASSWORD_MIN_LENGTH = 12;
 const FM_PASSWORD_MAX_LENGTH = 256;
 const FM_PASSWORD_LOCK_MS = 15 * 60 * 1000;
 const FM_PASSWORD_MAX_ATTEMPTS = 5;
+const FM_SESSION_TTL_MS = 15 * 60 * 1000;
 const passwordFailures = new Map();
 const BOOTSTRAP_SECRET_FILE = path.join(os.homedir(), '.nodebb-file-manager-bootstrap');
 let settingsWriteQueue = Promise.resolve();
@@ -246,13 +247,38 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
 
     const requireFileManagerPassword = async (req, res, next) => {
         try {
+            const uid = String(req.uid);
+            const now = Date.now();
             const supplied = req.headers['x-file-manager-password'];
-            if (typeof supplied !== 'string' || !supplied || Buffer.byteLength(supplied, 'utf8') > FM_PASSWORD_MAX_LENGTH) {
-                return deny(res, 401, 'נדרש מפתח סיסמת מנהל הקבצים תקין');
+            const credentials = await getFileManagerCredentials();
+            const record = credentials[uid];
+
+            if (!record || typeof record.salt !== 'string' || typeof record.hash !== 'string') {
+                return deny(res, 403, 'טרם הוגדרה לך סיסמת מנהל קבצים. הגדר אותה לפני הכניסה למנהל הקבצים.');
             }
 
-            const key = String(req.uid) + ':' + String(req.ip || 'unknown');
-            const now = Date.now();
+            const credentialVersion = record.salt + ':' + record.hash;
+            const sessionAuth = req.session && req.session.fileManagerAuth;
+
+            // A successful unlock grants a short-lived session. A password reset changes
+            // the credential version and immediately invalidates previously unlocked sessions.
+            if (supplied === undefined || supplied === null || supplied === '') {
+                const sessionValid = sessionAuth &&
+                    sessionAuth.uid === uid &&
+                    sessionAuth.credentialVersion === credentialVersion &&
+                    Number.isFinite(sessionAuth.authenticatedAt) &&
+                    now - sessionAuth.authenticatedAt >= 0 &&
+                    now - sessionAuth.authenticatedAt < FM_SESSION_TTL_MS;
+
+                if (sessionValid) return next();
+                return deny(res, 403, 'פג תוקף האימות. יש להזין שוב את סיסמת מנהל הקבצים.');
+            }
+
+            if (typeof supplied !== 'string' || Buffer.byteLength(supplied, 'utf8') > FM_PASSWORD_MAX_LENGTH) {
+                return deny(res, 403, 'נדרש מפתח סיסמת מנהל הקבצים תקין');
+            }
+
+            const key = uid + ':' + String(req.ip || 'unknown');
             let attempts = passwordFailures.get(key);
 
             if (attempts && attempts.lockedUntil > now) {
@@ -262,12 +288,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
                 attempts = { count: 0, startedAt: now, lockedUntil: 0 };
             }
 
-            const credentials = await getFileManagerCredentials();
-            if (!credentials[String(req.uid)]) {
-                return deny(res, 403, 'טרם הוגדרה לך סיסמת מנהל קבצים. הגדר אותה בחלונית האבטחה.');
-            }
-
-            const valid = await verifyFileManagerPassword(req.uid, supplied);
+            const valid = await verifyFileManagerPassword(uid, supplied);
             if (!valid) {
                 attempts.count += 1;
                 if (attempts.count >= FM_PASSWORD_MAX_ATTEMPTS) {
@@ -286,7 +307,16 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
                     attempts.lockedUntil ? 'יותר מדי ניסיונות. הגישה ננעלה ל־15 דקות.' : 'סיסמת מנהל הקבצים שגויה');
             }
 
+            if (!req.session) {
+                return deny(res, 500, 'לא נוצרה הפעלת משתמש תקינה בשרת. יש להתחבר מחדש.');
+            }
+
             passwordFailures.delete(key);
+            req.session.fileManagerAuth = {
+                uid,
+                credentialVersion,
+                authenticatedAt: now
+            };
             return next();
         } catch (error) {
             winston.error('[file-manager] File Manager password verification failed: ' + (error.stack || error));
@@ -352,6 +382,11 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
         };
     });
 
+    post('/api/v3/plugins/file-manager/unlock', [managerIdentity, requireFileManagerPassword], async () => ({
+        success: true,
+        expiresInMs: FM_SESSION_TTL_MS
+    }));
+
     post('/api/v3/plugins/file-manager/credentials', [managerIdentity, requireCurrentPassword], async req => {
         const password = req.body && req.body.newPassword;
         const confirmation = req.body && req.body.confirmation;
@@ -378,7 +413,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
         return { success: true, configured: true };
     });
 
-    post('/api/v3/plugins/file-manager/credentials/reset', [adminOnly, requireCurrentPassword], async req => {
+    post('/api/v3/plugins/file-manager/credentials/reset', [adminOnly, requireFileManagerPassword, requireCurrentPassword], async req => {
         const uid = String(req.body && req.body.uid || '');
         if (!/^[1-9]\d{0,11}$/.test(uid) || !await user.exists(Number(uid))) {
             const error = new Error('משתמש היעד אינו תקין');
@@ -395,14 +430,14 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
         return { success: true };
     });
 
-    get('/api/v3/plugins/file-manager/list', [managerAccess], req => FileManager.list(req.query.path || ''));
-    get('/api/v3/plugins/file-manager/preview', [managerAccess], req => FileManager.preview(req.query.path || ''));
-    get('/api/v3/plugins/file-manager/read', [managerAccess], req => FileManager.read(req.query.path));
-    get('/api/v3/plugins/file-manager/search', [managerAccess], req => Extra.search(req.query.q, req.query.path || ''));
-    get('/api/v3/plugins/file-manager/backups', [editorAccess], () => Extra.backups());
+    get('/api/v3/plugins/file-manager/list', [managerAccess, requireFileManagerPassword], req => FileManager.list(req.query.path || ''));
+    get('/api/v3/plugins/file-manager/preview', [managerAccess, requireFileManagerPassword], req => FileManager.preview(req.query.path || ''));
+    get('/api/v3/plugins/file-manager/read', [managerAccess, requireFileManagerPassword], req => FileManager.read(req.query.path));
+    get('/api/v3/plugins/file-manager/search', [managerAccess, requireFileManagerPassword], req => Extra.search(req.query.q, req.query.path || ''));
+    get('/api/v3/plugins/file-manager/backups', [editorAccess, requireFileManagerPassword], () => Extra.backups());
 
     // Access management is administrator-only. Search returns only public profile fields.
-    get('/api/v3/plugins/file-manager/access', [adminOnly], async () => {
+    get('/api/v3/plugins/file-manager/access', [adminOnly, requireFileManagerPassword], async () => {
         const allowed = await getAllowedUsers();
         const uids = allowed.map(item => Number(item.uid));
         const users = uids.length ? await user.getUsersWithFields(uids, ['uid', 'username', 'userslug', 'picture'], 0) : [];
@@ -423,7 +458,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
         };
     });
 
-    get('/api/v3/plugins/file-manager/users/search', [adminOnly], async req => {
+    get('/api/v3/plugins/file-manager/users/search', [adminOnly, requireFileManagerPassword], async req => {
         const query = String(req.query.q || '').trim();
         if (query.length < 2 || query.length > 60) return { users: [] };
         const result = await user.search({
@@ -446,7 +481,7 @@ plugin.addRoutes = function ({ router, middleware, helpers }) {
         };
     });
 
-    post('/api/v3/plugins/file-manager/access', [adminOnly, requireCurrentPassword], async req => {
+    post('/api/v3/plugins/file-manager/access', [adminOnly, requireFileManagerPassword, requireCurrentPassword], async req => {
         const allowedUsers = await saveAllowedUsers(req.body.allowedUsers);
         winston.info('[file-manager:audit] Access list updated by uid ' + req.uid + ' (' + allowedUsers.length + ' allowed users)');
         return { success: true, count: allowedUsers.length };
